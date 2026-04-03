@@ -7,6 +7,7 @@ sys.path.insert(0, os.path.abspath("_ext"))
 
 project = "COGITO"
 author = "Emily Oliphant"
+copyright = "Emily Oliphant, 2026"
 
 extensions = [
     "file_cards",
@@ -52,7 +53,7 @@ templates_path = ["_templates"]
 exclude_patterns = ["_build"]
 
 html_theme = "furo"
-html_title = "COGITO \n insights into the quantum blackbox"
+html_title = "COGITO Homepage"
 html_subtitle = "Peer into the quantum blackbox"
 
 html_static_path = ["_static"]

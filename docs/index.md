@@ -1,4 +1,4 @@
-# COGITO - Home
+# COGITO - insights from the quantum blackbox
 
 ## Welcome to COGITO!
 
