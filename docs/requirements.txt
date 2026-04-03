@@ -1,6 +1,7 @@
 sphinx>=8
 myst-parser
 sphinx-design
+sphinx_inline_tabs
 furo
 
 numpy>=2.0.0
