@@ -12,4 +12,4 @@ pymatgen
 scikit-image
 dash
 dash-ag-grid
-seekpath=2.1.0
+seekpath==2.1.0
