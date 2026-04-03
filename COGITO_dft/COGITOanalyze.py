@@ -365,7 +365,7 @@ def analyze_all(dir: str = '',tag: str = '',make_change_plot: bool = True, show_
 
     Args:
         dir (str): Directory of the files
-        tag (str): Tag appended to file. Final path is (dir "****" + tag + ".*").
+        tag (str): Tag appended to file. Final path is (dir "*" + tag + ".*").
         make_change_plot (bool): Whether to create, save to (dir+"orb_change"+tag+".png"), and show the orbital radius change plot.
         show_fig (bool): Whether to plt.show() the orbital change figure.
         group_same_elem (bool): Whether to group atoms that are of the same element in the orbital change plot.
