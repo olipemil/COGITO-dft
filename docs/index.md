@@ -1,5 +1,4 @@
 # COGITO - Home
-<p class="page-subtitle">Quantum chemical bonding from plane-wave DFT</p>
 
 ## Welcome to COGITO!
 
