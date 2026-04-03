@@ -3,7 +3,7 @@ file_name="all_unique_bonds<tag>.json",
 tags=['required','output'],
 run_with=["COGITO_UNIFORM.jsonify_bonddata()","run_cogito_model()"],
 run_CLI="COGITOpost.py --dir DIR",
-more_info="These three json files include every integrated quantity you may want to analyze! (Band structure or DOS analysis requires more effort.) This file groups the bond in all_bonds.json so the data is easier to parse. It lists the atoms the bond, bond distance, bond degeneracy, and integrated COHP (energy) and COOP (electron count) values.",
+more_info="These three json files include every integrated quantity you may want to analyze! (Band structure or DOS analysis requires more effort.) This file groups the bonds in all_bonds.json so the data is easier to parse. It lists the bond's atom elements, distance, degeneracy, integrated COHP (energy) and COOP (electron count) values.",
 file_img='PbO/all_unique_bonds.json',
 }
 
@@ -12,7 +12,7 @@ file_name="all_bonds<tag>.json",
 tags=['required','output'],
 run_with=["COGITO_UNIFORM.jsonify_bonddata()","run_cogito_model()"],
 run_CLI="COGITOpost.py --dir DIR",
-more_info="Data per bond for every atom pair that has a sufficiently large iCOHP element (default icohp>0.00001). Provides matrices between the orbitals of atom1 and atom2 for iCOHP, iCOOP, bond occupation (density matrix), and magnetic moment (if spin_polar=True). The key for each bond has the format 'atmind1, atmind2, T1, T2, T3' and can be referenced in bulk used the 'all bonds' key in a unique bond from 'all_unique_bonds.json'."
+more_info="Data per bond for every atom pair that has a sufficiently large iCOHP element (default icohp>0.00001). Provides matrices between the orbitals of atom1 and atom2 for iCOHP, iCOOP, bond occupation (density matrix), and magnetic moment (if spin_polar=True). The key for each bond has the format 'atmind1, atmind2, T1, T2, T3' and can be referenced in bulk using the 'all bonds' key in a unique bond from 'all_unique_bonds.json'."
 file_img='PbO/all_bonds.json',
 }
 
@@ -21,7 +21,7 @@ file_name="all_atoms<tag>.json",
 tags=['required','output'],
 run_with=["COGITO_UNIFORM.jsonify_bonddata()","run_cogito_model()"],
 run_CLI="COGITOpost.py --dir DIR",
-more_info="This json contains all you need for any atomic analysis. This includes onsite and Mulliken parital charges, orbital occupations (by orbital type and individual orbital), orbital energies, and (if spin_polar=True) onsite and Mulliken magnetic moments.",
+more_info="This json contains all you need for any atomic analysis. This includes onsite and Mulliken parital charges, orbital occupations (by orbital type and individual orbital), onsite orbital 'bonding' (like lone pair effects), orbital energies, and (if spin_polar=True) onsite and Mulliken magnetic moments.",
 file_img='PbO/all_atoms.json',
 }
 
