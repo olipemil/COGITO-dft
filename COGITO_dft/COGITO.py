@@ -317,7 +317,7 @@ class COGITO(object):
 
         Args:
             invariant (bool): Whether to construct the orbitals as eigenvectors of the local environment tensor.
-            irreducible_grid (bool): Whether or not the kpoint grid is irreducible. True for ISYM=1''|''2''|''3; False for ISYM=-1 (does not work with ISYM=0).
+            irreducible_grid (bool): Whether or not the kpoint grid is irreducible. True for ISYM=1``|``2``|``3; False for ISYM=-1 (does not work with ISYM=0).
             verbose (str): How much to ouput, includes 0,1,2,3. Higher numbers result in more output.
             tag (bool): Tag to be appended to the runs output files.
             include_excited (int): How much to include excited orbital states, includes 0, 1, 2. To do this best avoid using POTCARs with semi-core states.
@@ -328,8 +328,8 @@ class COGITO(object):
             save_orb_converg_info (bool): Creates the file 'orb_converg_info.json'.
             orbfactor (float): Multipled by the radial part of the pseudo radial orbital to either shrink or grow them.
             num_steps (int): Maximum number of steps to perform the convergence. Generally convergence is achieved around 5-20 steps.
-                        Setting equal to 0 will run the standard direct algorithm where ''|X_a> = sum_n(c_na |Y_n>)''.
-                        Where ''|Y_n>'' are the set of bands (equal to number of orbitals) of the highest projection.
+                        Setting equal to 0 will run the standard direct algorithm where ``|X_a> = sum_n(c_na |Y_n>)``.
+                        Where ``|Y_n>`` are the set of bands (equal to number of orbitals) of the highest projection.
             num_outer (bool): The number of outer loops in COGITO. Aka, the guassian fit from fit_to_atomic_orb is feed back into the convergence and fitting. Converges very quickly with some possibly of divergence in some systems if num_outer is too large.
                         Values of 2-5 are recommended. Running with 0 creates model from just VASP psuedo orbitals.
             plot_orbs (bool): Plot the radial converged orbital being fit to Gaussian functions.
