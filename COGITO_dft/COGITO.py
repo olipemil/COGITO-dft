@@ -317,7 +317,7 @@ class COGITO(object):
 
         Args:
             invariant (bool): Whether to construct the orbitals as eigenvectors of the local environment tensor.
-            irreducible_grid (bool): Whether or not the kpoint grid is irreducible. True for ISYM=1\|2\|3; False for ISYM=-1 (does not work with ISYM=0).
+            irreducible_grid (bool): Whether or not the kpoint grid is irreducible. True for ISYM=1''|''2''|''3; False for ISYM=-1 (does not work with ISYM=0).
             verbose (str): How much to ouput, includes 0,1,2,3. Higher numbers result in more output.
             tag (bool): Tag to be appended to the runs output files.
             include_excited (int): How much to include excited orbital states, includes 0, 1, 2. To do this best avoid using POTCARs with semi-core states.

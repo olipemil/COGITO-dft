@@ -672,7 +672,7 @@ class COGITO_TB_Model(object):
                 fig.show()
 
     @staticmethod
-    def generate_gpnts(self,kpt: list) -> npt.NDArray[]:
+    def generate_gpnts(self,kpt: list):
         """
         Similar to from pymatgen.io.vasp.outputs.Wavecar but is vectorized.
 
@@ -680,7 +680,7 @@ class COGITO_TB_Model(object):
             kpt (list): The k-point in reduced coordinates.
 
         Returns:    
-            npt.NDArray : The gpoints
+            NDArray : The gpoints
         """
         _C = 0.262465831
         encut = 520
