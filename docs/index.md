@@ -41,6 +41,12 @@ Complete documentation of COGITO modules.
 
 <br>
 
+## Reference
+
+The COGITO codebase, website, and tutorials are created by [Emily Oliphant](https://olipemil.github.io/). The work was done as part of her PhD at the University of Michigan with Wenhao Sun and Emmanouil Kioupakis. She is now a Tayebati postdoctoral fellow at MIT. 
+
+For more information on the theory and testing of COGITO, please see our [manuscript](https://arxiv.org/abs/2511.19725).
+
 ## Quick Guide
 
 Click images for detailed tutorials or use the links below to jump directly to API documentation.
