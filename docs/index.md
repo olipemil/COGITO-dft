@@ -106,7 +106,6 @@ Click images for detailed tutorials or use the links below to jump directly to A
 :caption: Guide
 :hidden:
 
-index
 tutorial
 file_struc
 ```
