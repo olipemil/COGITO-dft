@@ -1,0 +1,71 @@
+initializing COGITO
+check elems: ['Si'] ['2'] ['Si' 'Si'] 2
+check: ['Si']
+SYMPREC! 0.0001
+getting wavecar
+num plane waves: 1067
+setting up intitial orbitals
+got POT info
+orb types! ['s' 'p' 'p' 'p' 's' 'p' 'p' 'p']
+orbital radius [1.0776 1.4321 1.4321 1.4321 1.0776 1.4321 1.4321 1.4321]
+pseudo electrons per atom: [4. 4.]
+elapsed time for initialization: 0.9785909652709961
+
+achieved convergence at loop 4 0.3401095683775257
+elapsed time for converged orbs: 0.20575785636901855
+
+fitting orbitals over 4 loops
+orbital radius [1.011  1.3039 1.3039 1.3039 1.011  1.3039 1.3039 1.3039]
+orbital percent change pseudo: [-6.18 -8.96 -8.96 -8.96 -6.18 -8.96 -8.96 -8.96]
+elapsed time for fitting orbs: 2.4507551193237305
+
+achieved convergence at loop 4 0.46941043089611534
+elapsed time for converged orbs: 0.40354275703430176
+
+fitting orbitals over 4 loops
+orbital radius [1.025  1.3157 1.3157 1.3157 1.025  1.3157 1.3157 1.3157]
+orbital percent change pseudo: [-4.88 -8.13 -8.13 -8.13 -4.88 -8.13 -8.13 -8.13]
+elapsed time for fitting orbs: 3.819803237915039
+
+achieved convergence at loop 4 0.46940959599798254
+elapsed time for converged orbs: 0.6003947257995605
+
+fitting orbitals over 4 loops
+orbital radius [1.029  1.3139 1.3139 1.3139 1.029  1.3139 1.3139 1.3139]
+orbital percent change pseudo: [-4.51 -8.26 -8.26 -8.26 -4.51 -8.26 -8.26 -8.26]
+elapsed time for fitting orbs: 5.167762279510498
+
+getting ae overlaps
+-----------------------------------
+-----------------------------------
+
+projected orbital on wavefunctions
+-----------------------------------
+-----------------------------------
+percent charge spilling: 0.9 %
+maximum band charge spill: 1.43 %
+maximum charge spill: 3.45 %
+avg spill per band: [0.0023 0.0087 0.0107 0.0142 0.1401 0.2527 0.2514 0.3281 0.7302 0.8023
+ 0.8669 0.9075 0.9108 0.9369 0.971  0.9769 0.9795 0.9845 0.9882 0.9925]
+average orbital mixing: 0.65 %
+max orbital mixing: 1.13 %
+
+elapsed time for projecting orbs: 0.96573805809021
+
+spin polar? False
+num kpts reconstructed from irred: 729
+num kpts reconstructed after time symmetry: 729
+elapsed time for optimize and symmetry: 1.8436689376831055
+
+kpoint grid, now numtrans: [9 9 9]
+cutoff for params! 9.0 9.0 9.0
+elapsed time for calculating hams: 3.910771369934082
+finished!
+
+elapsed time for initialization: 0.9785909652709961
+elapsed time for converged orbs: 0.6003947257995605
+elapsed time for fitting orbs: 5.167762279510498
+elapsed time for projecting orbs: 0.96573805809021
+elapsed time for optimize and symmetry: 1.8436689376831055
+elapsed time for calculating hams: 3.910771369934082
+total time: 13.466926336288452

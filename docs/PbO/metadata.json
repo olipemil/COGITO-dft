@@ -1,0 +1,36 @@
+{
+  "cli args": [
+    "COGITO.py",
+    "--dir",
+    "Si/rand/",
+    "--tag",
+    "test_meta"
+  ],
+  "final args": {
+    "directory": "Si/rand/",
+    "irreducible_grid": true,
+    "verbose": 0,
+    "tag": "test_meta",
+    "include_excited": 1,
+    "calc_nrms": false,
+    "save_orb_converg_info": true,
+    "orbfactor": 1.0,
+    "num_steps": 50,
+    "num_outer": 3,
+    "plot_orbs": false,
+    "min_proj": 0.01,
+    "band_opt": true,
+    "orb_opt": true,
+    "orb_orth": false,
+    "start_from_orbnpy": false,
+    "plot_projBS": false,
+    "plot_projDOS": false,
+    "orbs": null,
+    "save_orb_data": false,
+    "save_orb_figs": false,
+    "minimum_orb_energy": -80,
+    "min_duplicate_energy": -80
+  },
+  "dist_version": "0.1.0",
+  "datetime": "2026-03-31 07:44:50"
+}

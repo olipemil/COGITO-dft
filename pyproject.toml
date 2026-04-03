@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cogito-dft"
+version = "0.1.0"
+description = "Crystal Orbital Guided Iteration To atomic-Orbitals (COGITO) finds an adaptive atomic orbital basis for a given density functional theory (DFT) run, and then decodes the atom and bond contributions to electronic structure."
+readme = "README.md" 
+requires-python = ">=3.4"
+dependencies = [
+    "numpy>=2.0.0",
+    "scipy>=1.15.0",
+    "matplotlib",
+    "plotly",
+    "pymatgen"
+]
+
+[project.optional-dependencies]
+plot = [
+    "scikit-image",
+    "dash",
+    "dash-ag-grid",
+    "seekpath==2.1.0"
+]
+
+[project.scripts]
+COGITO = "COGITO_dft.COGITO:main"
+COGITOpost = "COGITO_dft.COGITOpost:main"
+COGITOanalyze = "COGITO_dft.COGITOanalyze:main"
+
+[tool.setuptools]
+packages = ["COGITO_dft"]

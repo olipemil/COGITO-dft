@@ -4246,7 +4246,7 @@ class COGITO(object):
             for kind,kpt in enumerate(kpt_radgrid):
                 kr = kpt*rad_grid
                 bessel = spherical_jn(l,kr)
-                integral = np.trapz(orb_real*bessel*r2,rad_grid)#*np.pi**(1/4)# *nx*ny*nz
+                integral = np.trapezoid(orb_real*bessel*r2,rad_grid)#*np.pi**(1/4)# *nx*ny*nz
                 orb_recip[kind] = integral
             fourier_rad_orbs[orb] = orb_recip
             #plt.plot(kpt_radgrid,orb_recip)
@@ -4754,9 +4754,6 @@ class COGITO(object):
         Returns:    
             unknown: Set of band which minimizes the difference between the orbital states left after and the band set orbital states;   maybe later: also minimize overlap between Lowdin orthogonalized band sets.
         """
-        
-        #import cvxpy as cvp
-        from scipy.optimize import LinearConstraint, milp
         
         aeorth_coeffs = self.get_orth_coeffs(self.mnkcoefficients)
         self.mixed_eigval = np.zeros((self.num_kpts,self.num_orbs,self.num_orbs),dtype=np.complex128)
@@ -8804,33 +8801,33 @@ def main(argv=None):
                                                         "Spin-polarization and magnetization is hangled automatically. However, the calculation cannot be noncolinear (have spin-orbit coupling). "
                                                         "!!IMPORTANT!! To set any of the boolean variables to False do '--irred_grid ''', where the bool('') reads as False in python. Any other string will be True.")
     cogito_args.add_argument("--dir",type=str,help="The directory that contains the VASP output files.",default="")
-    cogito_args.add_argument("--invariant",type=bool,help="Whether to construct the orbitals as eigenvectors of the local environment tensor.",default=True)
-    cogito_args.add_argument("--irred_grid",type=bool,help="Whether or not the k-point grid from VASP is irreducible (i.e. ISYM=1,2,3).",default=True)
+    cogito_args.add_argument("--no_save_metadata",help="If called, does not save CLI, input parameters, and printed output from COGITO run to 'metadata'+tag+'.json' and 'COG_output'+tag+'.txt'.",action='store_true') #not #
+    cogito_args.add_argument("--not_invariant",help="If called, does not construct the orbitals as eigenvectors of the local environment tensor.",action='store_true')  #not #
+    cogito_args.add_argument("--full_kgrid",help="If called, the k-point grid from VASP must be full grid (not irreducible) (i.e. ISYM=-1).",action='store_true') #not #
     cogito_args.add_argument("--verb",type=int,help="Verbosity with which to print updates and data.",default=0)
     cogito_args.add_argument("--tag",type=str,help="Tag to be appended to the runs output files.",default="")
     cogito_args.add_argument("--include_ex",type=int,help="Integer that cues how many excited orbitals to include in the COGITO basis. Options are 0, 1, or 2.",default=1)
-    cogito_args.add_argument("--calc_nrms",type=bool,help="Extra analysis to compare reconstructed COGITO wfs to DFT wfs. Prints nrmse to error_output.txt",default=False)
-    cogito_args.add_argument("--save_converg",type=bool,help="Whether to save statistics on the orbital convergence to orb_converg_info.json.",default=True)
+    cogito_args.add_argument("--calc_nrms",help="If called, does extra analysis to compare reconstructed COGITO wfs to DFT wfs. Prints nrmse to error_output.txt",action='store_true') #
+    cogito_args.add_argument("--no_save_converg",help="If called, does not save statistics on the orbital convergence to orb_converg_info.json.",action='store_true') # not #
     cogito_args.add_argument("--orbfactor",type=float,help="The amount to scale the initial orbital basis by.",default=1.0)
     cogito_args.add_argument("--num_steps",type=int,help="Maximum number of steps in the first convergence section, which finds numerical Bloch orbitals.",default=50)
     cogito_args.add_argument("--num_outer",type=int,help="Number of steps in the full convergence loop. Do not exceed 10.",default=3)
-    cogito_args.add_argument("--plot_orbs",type=bool,help="Whether to plt.show() COGITO radial fitting plots.",default=False)
-    cogito_args.add_argument("--band_opt",type=bool,help="Whether or not to apply Lowdin+Gram+extras band optimization scheme for improved TB interpolation (improves band error from ~40meV to ~2meV).",default=True)
-    cogito_args.add_argument("--orb_opt",type=bool,help="Whether or not enforce zero orbital mixing for improved TB interpolation.",default=True)
-    cogito_args.add_argument("--save_orb_figs",type=bool,help="Whether save the COGITO radial fitting to fit_cogito.png.",default=False)
+    cogito_args.add_argument("--plot_orbs",help="If called, does plt.show() for COGITO radial fitting plots.",action='store_true') #
+    cogito_args.add_argument("--no_band_opt",help="If called, does not to apply Lowdin+Gram+extras band optimization scheme for improved TB interpolation (scheme improves band error from ~40meV to ~2meV).",action='store_true') #not #
+    cogito_args.add_argument("--no_orb_opt",help="If called, does not enforce zero orbital mixing for improved TB interpolation.",action='store_true') # not #
+    cogito_args.add_argument("--save_orb_figs",help="If called, saves the COGITO radial fitting to fit_cogito.png (if --verb > 1, also saves init_cogito.png and all_converge_data.json).",action='store_true') #
     cogito_args.add_argument("--min_proj",type=float,help="Minimum projectability for wavefunction to be included.",default=0.01)
-    cogito_args.add_argument("--start_orbnpy",type=bool,help="Start from previously output COGITO basis. Skips orbital convergence and goes to projection and TB model generation.",default=False)
+    cogito_args.add_argument("--start_orbnpy",help="If called, starts from previously output COGITO basis. Skips orbital convergence and goes to projection and TB model generation.",action='store_true') #
     cogito_args.add_argument("--minimum_orb_en",type=float,help="The lower limit to add semi-core states in the POTCAR into the COGITO basis.",default=-80)
     cogito_args.add_argument("--min_duplicate_en",type=float,help="The lower limit to add semi-core states when there is another valence state of the same l quantum number in the POTCAR into the COGITO basis.",default=-80)
-    cogito_args.add_argument("--save_metadata",type=bool,help="Saves CLI, input parameters, and printed output from COGITO run to 'metadata'+tag+'.json' and 'COG_output'+tag+'.txt'.",default=True)
 
 
     args = cogito_args.parse_args(argv) # if args_manual==None then should take from command line
     print("!!IMPORTANT!! To set any of the boolean variables to False do --irred_grid '', where the bool('') reads as False in python. Any other string will be True.")
 
-    run_cogito(directory=args.dir, save_metadata = args.save_metadata,invariant=args.invariant, irreducible_grid=args.irred_grid, verbose=args.verb, tag=args.tag, include_excited=args.include_ex, calc_nrms=args.calc_nrms,
-                        save_orb_converg_info = args.save_converg,orbfactor = args.orbfactor, num_steps = args.num_steps, num_outer = args.num_outer,
-                        plot_orbs = args.plot_orbs,band_opt = args.band_opt, orb_opt = args.orb_opt, min_proj = args.min_proj,
+    run_cogito(directory=args.dir, save_metadata = not args.no_save_metadata,invariant=not args.not_invariant, irreducible_grid=not args.full_kgrid, verbose=args.verb, tag=args.tag, include_excited=args.include_ex, calc_nrms=args.calc_nrms,
+                        save_orb_converg_info =not args.no_save_converg,orbfactor = args.orbfactor, num_steps = args.num_steps, num_outer = args.num_outer,
+                        plot_orbs = args.plot_orbs,band_opt =not args.no_band_opt, orb_opt =not args.no_orb_opt, min_proj = args.min_proj,
                         start_from_orbnpy = args.start_orbnpy,save_orb_figs = args.save_orb_figs,
                         minimum_orb_energy = args.minimum_orb_en, min_duplicate_energy = args.min_duplicate_en)
 

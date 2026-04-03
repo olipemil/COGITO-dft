@@ -1,0 +1,23 @@
+@file{orb_converg_info,
+file_name="orb_converg_info<tag>.json",
+tags=['optional','input','quality'],
+run_with=["analyze_orb_converg_info()","analyze_all()"],
+more_info="JSON file tracking orbital convergence across outer loops. Written by COGITO. Read to check radial change per iteration, orbital radius change, Bloch NRMSE/NME, and Gaussian fit error. Required for analyze_orb_converg_info(); if missing, analyze_all() catches the error and skips.",
+file_img='PbO/orb_converg_info.json',
+}
+
+@file{error_output,
+file_name="error_output<tag>.txt",
+tags=['optional','input','quality'],
+run_with=["analyze_spill_error()","analyze_all()"],
+more_info="Summary of COGITO projection quality metrics. Written by COGITO. Read to check percent charge spilling, maximum band charge spill, maximum kpt/band spill, and average/maximum orbital mixing. Required for analyze_spill_error(); if missing, analyze_all() catches the error and skips.",
+file_img='PbO/error_output.txt',
+}
+
+@file{DFT_band_error,
+file_name="DFT_band_error<tag>.txt",
+tags=['optional','input','quality'],
+run_with=["analyze_band_error()","analyze_all()"],
+more_info="Text file of TB vs DFT band error metrics. Written by COGITOpost. Read to check band distance, maximum valence band error, and average lowest conduction band error. Required for analyze_band_error(); if missing, analyze_all() catches the error and skips.",
+file_img='PbO/DFT_band_error.txt',
+}

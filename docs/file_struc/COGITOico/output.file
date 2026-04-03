@@ -1,0 +1,23 @@
+@file{ICOHP_ICOOP,
+file_name="ICOHP<spin>.npy / ICOOP<spin>.npy",
+tags=['optional','output'],
+run_with=["COGITO_ICO.save_ICOnpy()"],
+more_info="Re-saves the ICOHP and ICOOP matrices loaded into COGITO_ICO, one file per spin channel. Useful for converting from the legacy txt format to the faster .npy format, or after any in-place modification of the matrices. Overwrites files with the same name.",
+}
+
+@file{crystal_bonds,
+file_name="crystal_bonds.html",
+tags=['optional','output'],
+run_with=["COGITO_ICO.get_bonds_figure()","COGITO_ICO.get_bonds_charge_figure()"],
+more_info="Interactive Plotly HTML of the crystal structure with bonds colored and sized by iCOHP bond energy (get_bonds_figure) or by iCOHP + charge partitioning (get_bonds_charge_figure). Equivalent to the COGITOpost version but recomputed directly from the ICOHP/ICOOP matrices without needing TBparams or WAVECAR. If plot_atom is set, saves crystal_bonds<atom>.html instead.",
+file_img='PbO/crystal_bonds.html',
+}
+
+@file{crystal_bond_density,
+file_name="crystal_bond_density.html",
+tags=['optional','output'],
+run_with=["COGITO_ICO.get_bond_density_figure()"],
+needed_tags="bond_occup<spin>.npy loaded via read_bond_occup(), orbitals.npy loaded via read_orbitals()",
+more_info="Interactive Plotly HTML showing the crystal structure with a real-space bond electron density isosurface overlaid. Requires the bond occupation matrix and orbital Gaussian coefficients to be loaded first. The density is projected onto a real-space grid and rendered as a 3D isosurface.",
+file_img='PbO/crystal_bond_density.html',
+}

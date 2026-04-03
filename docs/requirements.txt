@@ -1,0 +1,15 @@
+sphinx>=8
+myst-parser
+sphinx-design
+furo
+
+numpy>=2.0.0
+scipy>=1.15.0
+matplotlib
+plotly
+pymatgen
+
+scikit-image
+dash
+dash-ag-grid
+seekpath=2.1.0

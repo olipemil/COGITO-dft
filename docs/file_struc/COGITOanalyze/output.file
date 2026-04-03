@@ -1,0 +1,18 @@
+@file{orb_change,
+file_name="orb_change<tag>.png",
+tags=['optional','output'],
+run_with=["analyze_orb_converg_info()","analyze_all()"],
+run_CLI="COGITOanalyze.py --dir DIR",
+skip_CLI="COGITOanalyze.py --dir DIR --no_make_change_plot",
+needed_tags="make_change_plot=True (default)",
+more_info="Bar chart of percent orbital radius change from the initial POTCAR value to the converged COGITO value, grouped by element and orbital type (s/p/d indicated by bar hatch). Useful for quickly seeing which orbitals changed the most during convergence and whether the changes are chemically reasonable.",
+file_img='PbO/orb_change.png',
+}
+
+@file{analysis,
+file_name="analysis<tag>.txt",
+run_with=["analyze_all()"]
+run_CLI="COGITOanalyze.py --dir DIR",
+more_info="This contains text describing the quality of output files from COGITO and COGITOpost. If the quality is lower than expected, it will suggest possible reasons and parameters changes to increase quality."
+file_img="Si/analysis.txt" 
+}

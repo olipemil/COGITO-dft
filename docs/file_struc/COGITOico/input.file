@@ -1,0 +1,36 @@
+@file{tb_input,
+file_name="tb_input<tag>.txt",
+tags=['required','input'],
+run_with=["COGITO_ICO.__init__()"],
+more_info="Structural input file for the TB model. Written by COGITO. Contains lattice vectors, atom positions and types, orbital positions and types, spherical harmonic combination vectors, Fermi energy, and energy shift. Read first on initialization of COGITO_ICO.",
+file_img='PbO/tb_input.txt',
+}
+
+@file{ICOHP,
+file_name="ICOHP<spin>.npy",
+tags=['required','input'],
+run_with=["COGITO_ICO.__init__()"],
+more_info="Integrated COHP matrix saved by COGITOpost. Read on initialization to set up the orbital/translation structure. Spin index: 0 for spin-up (or non-spin-polarized), 1 for spin-down. If both ICOHP0.npy and ICOHP1.npy are present, COGITO_ICO automatically switches to spin_polar=True.",
+}
+
+@file{ICOOP,
+file_name="ICOOP<spin>.npy",
+tags=['required','input'],
+run_with=["COGITO_ICO.__init__()"],
+needed_tags="orbs_orth=False (default)",
+more_info="Integrated COOP matrix saved by COGITOpost. Read on initialization alongside ICOHP. Skipped if orbs_orth=True. Same spin index convention as ICOHP.",
+}
+
+@file{bond_occup,
+file_name="bond_occup<spin>.npy",
+tags=['optional','input'],
+run_with=["COGITO_ICO.read_bond_occup()"],
+more_info="Bond occupation density matrix saved by COGITOpost. Read via read_bond_occup(), which must be called explicitly after initialization. Required for bond density visualization in get_bond_density_figure(). If the .npy file is not found, an error is printed and the matrix is not loaded.",
+}
+
+@file{orbitals,
+file_name="orbitals<tag>.npy",
+tags=['optional','input'],
+run_with=["COGITO_ICO.read_orbitals()"],
+more_info="Converged COGITO orbital Gaussian coefficients. Written by COGITO. Read via read_orbitals(), which must be called explicitly. Used to reconstruct the real-space orbital shapes for bond density isosurface visualization in get_bond_density_figure().",
+}

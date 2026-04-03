@@ -344,6 +344,18 @@ def analyze_band_error(dir:str='',tag: str=''):
 
     #print(band_dist,max_error,lowcond_error)
 
+class Tee: # just to print to terminal and save output to file
+    def __init__(self, *streams):
+        self.streams = streams
+
+    def write(self, data):
+        for s in self.streams:
+            s.write(data)
+        return len(data)
+
+    def flush(self):
+        for s in self.streams:
+            s.flush()
 
 def analyze_all(dir: str = '',tag: str = '',make_change_plot: bool = True, show_fig: bool=False, group_same_elem: bool = True):
     """
@@ -360,19 +372,28 @@ def analyze_all(dir: str = '',tag: str = '',make_change_plot: bool = True, show_
                     Set to False to observe differences between the same element in varying coordination.
     """
     # make code to try running each one. If it fails just give error message that file wasn't found.
-    try:
-        analyze_orb_converg_info(dir=dir,tag=tag,make_change_plot=make_change_plot,show_fig=show_fig, group_same_elem=group_same_elem)
-    except:
-        print("Orbital convergence analysis failed. Check that (dir+'orb_converg_info'+tag+'.json') exists.")
-    try:
-        analyze_spill_error(dir=dir,tag=tag)
-    except:
-        print("Spill and orbital mixing analysis failed. Check that (dir+'error_output'+tag+'.txt') exists.")
 
-    try:
-        analyze_band_error(dir=dir,tag=tag)
-    except:
-        print("DFT band error analysis failed. Check that (dir+'DFT_band_error'+tag+'.txt') exists.")
+    # Open log file for terminal output
+    import sys
+    from contextlib import redirect_stdout, redirect_stderr
+    log_file = open(dir + "analysis" + tag + ".txt", "w", buffering=1)
+    tee_out = Tee(sys.stdout, log_file)
+    tee_err = Tee(sys.stderr, log_file)
+
+    with redirect_stdout(tee_out), redirect_stderr(tee_err):
+        try:
+            analyze_orb_converg_info(dir=dir,tag=tag,make_change_plot=make_change_plot,show_fig=show_fig, group_same_elem=group_same_elem)
+        except:
+            print("Orbital convergence analysis failed. Check that (dir+'orb_converg_info'+tag+'.json') exists.")
+        try:
+            analyze_spill_error(dir=dir,tag=tag)
+        except:
+            print("Spill and orbital mixing analysis failed. Check that (dir+'error_output'+tag+'.txt') exists.")
+
+        try:
+            analyze_band_error(dir=dir,tag=tag)
+        except:
+            print("DFT band error analysis failed. Check that (dir+'DFT_band_error'+tag+'.txt') exists.")
 
 def main(argv=None):
     import argparse
@@ -380,30 +401,37 @@ def main(argv=None):
     analyzer_args.add_argument("--dir",type=str,help="The directory that contains the COGITO output files.",default="")
     analyzer_args.add_argument("--tag",type=str,help="The tag appended to COGITO output files.",default="")
     analyzer_args.add_argument("--files",type=str,help="Files to analyze. Can be 'all', 'orbital','spill', 'band', or a mix (e.g. 'orbital spill').",default="all")
-    analyzer_args.add_argument("--make_change_plot",type=bool,help="Whether to create and save the orbital change plot.",default=True)
-    analyzer_args.add_argument("--show_fig",type=bool,help="Whether to plt.show() the orbital change figure.",default=False)
-    analyzer_args.add_argument("--group_same_elem",type=bool,help="Whether group atoms of the same element in the orbital plot.",default=True)
+    analyzer_args.add_argument("--no_make_change_plot",help="If called, does not create and save the orbital change plot.",action='store_true') #not #
+    analyzer_args.add_argument("--show_fig",help="If called, does plt.show() for the orbital change figure.",action='store_true') #
+    analyzer_args.add_argument("--no_group_same_elem",help="If called, does not group atoms of the same element in the orbital plot.",action='store_true') #not #
 
     args = analyzer_args.parse_args(argv)
     if 'all' in args.files:
-        analyze_all(args.dir,args.tag,args.make_change_plot,args.show_fig,args.group_same_elem)
+        analyze_all(args.dir,args.tag,not args.no_make_change_plot,args.show_fig,not args.no_group_same_elem)
     else:
-        if 'orbital' in args.files:
-            try:
-                analyze_orb_converg_info(args.dir,args.tag,args.make_change_plot,args.show_fig,args.group_same_elem)
-            except:
-                print("Orbital convergence analysis failed. Check that (dir+'orb_converg_info'+tag+'.json') exists.")
-        if 'spill' in args.files:
-            try:
-                analyze_spill_error(args.dir,args.tag)
-            except:
-                print("Spill and orbital mixing analysis failed. Check that (dir+'error_output'+tag+'.txt') exists.")
+        import sys
+        from contextlib import redirect_stdout, redirect_stderr
+        # Open log file for terminal output
+        log_file = open(args.dir + "analysis" + args.tag + ".txt", "w", buffering=1)
+        tee_out = Tee(sys.stdout, log_file)
+        tee_err = Tee(sys.stderr, log_file)
+        with redirect_stdout(tee_out), redirect_stderr(tee_err):
+            if 'orbital' in args.files:
+                try:
+                    analyze_orb_converg_info(args.dir,args.tag,not args.no_make_change_plot,args.show_fig,not args.no_group_same_elem)
+                except:
+                    print("Orbital convergence analysis failed. Check that (dir+'orb_converg_info'+tag+'.json') exists.")
+            if 'spill' in args.files:
+                try:
+                    analyze_spill_error(args.dir,args.tag)
+                except:
+                    print("Spill and orbital mixing analysis failed. Check that (dir+'error_output'+tag+'.txt') exists.")
 
-        if 'band' in args.files:
-            try:
-                analyze_band_error(args.dir,args.tag)
-            except:
-                print("DFT band error analysis failed. Check that (dir+'DFT_band_error'+tag+'.txt') exists.")
+            if 'band' in args.files:
+                try:
+                    analyze_band_error(args.dir,args.tag)
+                except:
+                    print("DFT band error analysis failed. Check that (dir+'DFT_band_error'+tag+'.txt') exists.")
 
 if __name__ == "__main__":
     raise SystemExit(main())

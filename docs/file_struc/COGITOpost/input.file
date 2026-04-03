@@ -1,0 +1,42 @@
+@file{tb_input,
+file_name="tb_input<tag>.txt",
+tags=['required','input'],
+run_with=["COGITO_TB_Model.__init__()"],
+more_info="Structural input file for the TB model. Written by COGITO. Contains lattice vectors, atom positions and types, orbital positions and types, spherical harmonic combination vectors, Fermi energy, and energy shift. Read first on initialization of any COGITOpost class.",
+}
+
+@file{TBparams,
+file_name="TBparams<tag>.txt",
+tags=['required','input'],
+run_with=["COGITO_TB_Model.__init__()"],
+more_info="Tight-binding hopping parameters in Wannier90-style format. Written by COGITO. Required alongside overlaps.txt and tb_input.txt to initialize the TB model. If spin_polar=True, reads TBparams<tag>0.txt and TBparams<tag>1.txt for spin-up and spin-down.",
+}
+
+@file{overlaps,
+file_name="overlaps<tag>.txt",
+tags=['required','input'],
+run_with=["COGITO_TB_Model.__init__()"],
+needed_tags="orbs_orth=False (default)",
+more_info="Orbital overlap matrix in Wannier90-style format. Written by COGITO. Required unless orbs_orth=True, in which case it is skipped. If spin_polar=True, reads overlaps<tag>0.txt and overlaps<tag>1.txt.",
+}
+
+@file{EIGENVAL,
+file_name="EIGENVAL",
+tags=['optional','input','quality'],
+run_with=["COGITO_TB_Model.compare_to_DFT()","run_cogito_model()"],
+more_info="VASP band structure EIGENVAL file. Used to compare DFT eigenvalues against the COGITO TB model energies on the same k-point grid. If the file is not found at the given path, compare_to_DFT() is skipped with a warning.",
+}
+
+@file{orbitals,
+file_name="orbitals<tag>.npy",
+tags=['optional','input'],
+run_with=["COGITO_TB_Model.plot_orbitals()"],
+more_info="Converged COGITO orbital coefficients in reciprocal space. Written by COGITO. Read only by plot_orbitals() to visualize the fitted Gaussian orbital shapes. Not needed for any other COGITOpost functionality.",
+}
+
+@file{orb_converg_info,
+file_name="orb_converg_info<tag>.json",
+tags=['optional','input'],
+run_with=["COGITO_TB_Model.plot_crystal_field()","run_cogito_model()"],
+more_info="JSON file with orbital convergence data from COGITO, including converged orbital radii per orbital. Read by plot_crystal_field() to annotate the crystal field diagram with orbital radii. If not present, the plot is skipped.",
+}

@@ -1,0 +1,350 @@
+/* ===== COGITO File Structure Cards ===== */
+
+/* Core palette (mirrors custom.css) */
+:root {
+  --offwhite:      #f5f4f0;
+  --charcoal:      #2e2e2e;
+  --sidebar-light: #3a3a3a;  /* sidebar bg in light mode */
+  --sidebar-dark:  #1e1e1e;  /* sidebar bg in dark mode */
+}
+
+/* --- Tab label bar (horizontal scroll, one-line tab row) --- */
+.tab-label-bar {
+  display: flex;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  /* No overflow-y or negative margins — border lives on the labels themselves */
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-foreground-muted) transparent;
+  background-color: color-mix(in srgb, var(--sidebar-light) 3%, transparent);
+  border-radius: 3px 3px 0 0;
+}
+body[data-theme="dark"] .tab-label-bar {
+  background-color: color-mix(in srgb, var(--sidebar-dark) 30%, transparent);
+}
+.tab-label-bar::-webkit-scrollbar        { height: 4px; }
+.tab-label-bar::-webkit-scrollbar-track  { background: transparent; }
+.tab-label-bar::-webkit-scrollbar-thumb  {
+  background: var(--color-foreground-muted);
+  border-radius: 2px;
+}
+/* Fills remaining width so the underline spans the full bar */
+.tab-label-bar::after {
+  content: '';
+  flex: 1;
+  min-width: 0.5em;
+  align-self: stretch;  /* fills full row height so border sits at the same baseline as labels */
+  border-bottom: 2px solid var(--tabs--border, #e6e6e6);
+}
+
+/* Radio inputs — invisible but NOT pointer-events:none (that blocks label activation) */
+.tab-label-bar > .tab-input {
+  position: absolute;
+  opacity: 0;
+}
+
+/* Tab labels: each carries its own bottom border (= the underline) */
+.tab-label-bar > .tab-label {
+  flex-shrink: 0;
+  cursor: pointer;
+  white-space: nowrap;
+  padding: 0.75em 1.25em 0.5em;
+  border-bottom: 2px solid var(--tabs--border, #e6e6e6);
+  color: var(--tabs--label-text, #4b5563);
+  font-size: 0.875em;
+  font-weight: 700;
+  transition: color 250ms, border-color 250ms;
+}
+.tab-label-bar > .tab-label:hover {
+  border-color: var(--tabs--label-border--hover, #d1d5db);
+}
+.tab-label-bar > .tab-input:checked + .tab-label {
+  color: var(--tabs--label-text--active, #0ea5e9);
+  border-color: var(--tabs--label-border--active, #0ea5e9);
+}
+
+/* Content panels — show/hide driven by JS */
+.tab-set > .tab-content {
+  padding: 0.4em 0.5em 0.5em;
+  box-shadow: none;   /* override sphinx-inline-tabs shadow that sits on top of the active border */
+  background-color: color-mix(in srgb, var(--sidebar-light) 8%, transparent);
+  border-radius: 0 0 3px 3px;
+}
+body[data-theme="dark"] .tab-set > .tab-content {
+  background-color: color-mix(in srgb, var(--sidebar-dark) 70%, transparent);
+}
+
+
+/* --- File flow visualization --- */
+.file-flow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1.2em;
+  margin: 1.5em 0;
+  flex-wrap: wrap;
+}
+
+.file-flow-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4em;
+}
+
+.file-flow-inputs {
+  align-items: flex-end;
+  max-height: 16.8em;
+  overflow-y: auto;
+  padding-left: 0.15em;   /* breathing room so box borders aren't clipped */
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-foreground-muted) transparent;
+}
+.file-flow-outputs {
+  align-items: flex-start;
+  max-height: 16.8em;
+  overflow-y: auto;
+  padding-right: 0.15em;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-foreground-muted) transparent;
+}
+.file-flow-inputs::-webkit-scrollbar,
+.file-flow-outputs::-webkit-scrollbar       { width: 3px; }
+.file-flow-inputs::-webkit-scrollbar-track,
+.file-flow-outputs::-webkit-scrollbar-track { background: transparent; }
+.file-flow-inputs::-webkit-scrollbar-thumb,
+.file-flow-outputs::-webkit-scrollbar-thumb {
+  background: var(--color-foreground-muted);
+  border-radius: 2px;
+}
+.file-flow-center  { align-items: center; }
+
+.file-flow-module-name {
+  font-family: monospace;
+  font-size: 1em;
+  font-weight: bold;
+  background-color: var(--cogito-class-bg);
+  color: var(--cogito-sig-color);
+  border-top: 3px solid var(--cogito-class-border);
+  padding: 0.4em 1em;
+  border-radius: 1px;
+  white-space: nowrap;
+}
+
+.file-flow-arrow {
+  font-size: 1.2em;
+  color: var(--color-foreground-muted);
+  align-self: center;
+}
+
+.file-flow-box {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 0.82em;
+  padding: 0.2em 0.55em;
+  border-radius: 2px;
+  white-space: nowrap;
+  cursor: pointer;
+  background-color: transparent;
+  transition: background-color 0.15s ease;
+  /* color, border, font-weight set inline from tag data */
+}
+
+.file-flow-box:hover {
+  background-color: var(--cogito-method-bg);
+}
+
+
+
+/* --- API link inside file cards --- */
+.file-api-link {
+  font-size: 0.85em;
+  margin-left: 6px;
+  color: #e74c3c;
+  text-decoration: none;
+}
+.file-api-link:hover { text-decoration: underline; }
+
+/* --- Tag color palette --- */
+:root {
+  --tag-required:    #c0392b;
+  --tag-quality:     #2471a3;
+  --tag-optional:    #6c757d;
+  --tag-input:       #1e8449;
+  --tag-output:      #7d3c98;
+  --tag-plot:        #d35400;
+}
+
+/* --- Module section header --- */
+.file-module-section {
+  margin: 2em 0 1em 0;
+}
+
+.file-module-label {
+  display: inline-block;
+  font-family: monospace;
+  font-size: 1.05em;
+  font-weight: bold;
+  background-color: var(--cogito-class-bg);
+  color: var(--cogito-sig-color);
+  border-top: 3px solid var(--cogito-class-border);
+  padding: 0.3em 0.8em;
+  border-radius: 1px;
+  margin-bottom: 0.8em;
+}
+
+/* --- Card grid --- */
+.file-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1em;
+  margin: 0.5em 0 1.5em 0;
+}
+
+/* --- Individual file card --- */
+.file-card {
+  border: 1px solid var(--cogito-method-border);
+  border-left: 4px solid var(--cogito-method-border);
+  border-radius: 3px;
+  background-color: var(--cogito-method-bg);
+  padding: 0.8em 1em;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5em;
+}
+
+/* --- File name --- */
+.file-card-name {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 1em;
+  font-weight: bold;
+  color: var(--color-foreground-primary);
+  margin: 0;
+  word-break: break-all;
+}
+
+/* --- Tags row --- */
+.file-card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25em;
+  margin-bottom: 0.25em;
+}
+
+.file-tag {
+  display: inline-block;
+  font-size: 0.75em;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 10px;
+  color: #fff;
+  text-transform: lowercase;
+  letter-spacing: 0.02em;
+}
+
+.file-tag.required { background-color: var(--tag-required); }
+.file-tag.quality  { background-color: var(--tag-quality);  }
+.file-tag.optional { background-color: var(--tag-optional); }
+.file-tag.input    { background-color: var(--tag-input);    }
+.file-tag.output   { background-color: var(--tag-output);   }
+.file-tag.plot     { background-color: var(--tag-plot);     }
+
+/* --- Left/right card body layout --- */
+.file-card-body {
+  display: flex;
+  gap: 0.75em;
+  align-items: flex-start;
+}
+
+.file-card-left {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.file-card-right {
+  flex: 0 0 45%;
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  .file-card-body {
+    flex-direction: column;
+  }
+  .file-card-right {
+    flex: 1 1 auto;
+    width: 100%;
+  }
+}
+
+/* --- Info rows (Generated by / Requires / Description) --- */
+.file-card-info {
+  font-size: 0.85em;
+  color: var(--color-foreground-secondary);
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 1px 6px;
+  align-items: baseline;
+}
+
+.file-card-info-label {
+  font-weight: bold;
+  white-space: nowrap;
+  color: var(--color-foreground-primary);
+}
+
+.file-card-info-value {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 0.95em;
+  word-break: break-word;
+}
+
+.file-card-info-value.prose {
+  font-family: inherit;
+  font-size: 1em;
+}
+
+/* --- Description block (full-width, below the info grid) --- */
+.file-card-description {
+  margin-top: 0.35em;
+  font-size: 0.85em;
+  color: var(--color-foreground-secondary);
+}
+
+.file-card-desc-text {
+  margin-top: 0.1em;
+  padding-left: 0.75em;
+  font-family: inherit;
+  line-height: 1.4;
+}
+
+/* --- Preview toggle button (unused — previews are always visible) --- */
+.file-card-img-toggle {
+  display: none;
+}
+
+/* --- Preview content (image, iframe, pre) --- */
+.file-card-img,
+.file-card-preview {
+  max-width: 100%;
+  border: 1px solid var(--cogito-method-border);
+  border-radius: 2px;
+  display: block;
+}
+
+.file-card-iframe {
+  width: 100%;
+  height: 430px;
+  border: none;
+}
+
+.file-card-pre {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 0.76em;
+  padding: 0.6em 0.8em;
+  background-color: var(--cogito-method-bg);
+  color: var(--color-foreground-primary);
+  overflow-x: auto;
+  overflow-y: auto;
+  max-height: 20em;
+  white-space: pre;
+  line-height: 1.45;
+  margin: 0;
+}

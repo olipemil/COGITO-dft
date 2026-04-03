@@ -869,6 +869,12 @@ class COGITO_TB_Model(object):
         print(energies)
         print(orbital_types)
 
+        if ylim == (-10, 0):
+            amin = np.amin(energies[energies > -20]) - 0.5
+            amax = np.amax(energies) + 0.5
+            yrange = amax - amin
+            ylim = (amin, amax)
+
         import re
         if self.spin_polar:
             fig, (ax1, ax2) = plt.subplots(1, 2,figsize=(10, 8))
@@ -893,16 +899,25 @@ class COGITO_TB_Model(object):
                     start = start + 0.44
             # plot splitting arrows
             low_en = unique_energies[0]
-            add = 0.08
+            add = -0.2
+            curcolor = 'royalblue'
             for en in unique_energies[1:]:
                 en_diff = en - low_en
                 ax1.arrow(0.1, low_en, 0, en_diff, length_includes_head=True, width=0.01, head_width=0.035,
-                          head_length=0.05, color="black")
-                label = r"$" + str(np.around(np.abs(en_diff), decimals=2)) + "$" + "eV"
+                          head_length=0.05, color=curcolor)
+                #print("range ratio",en_diff/yrange)
+                if en_diff/yrange<0.1:
+                    add = 0.4
+                val = np.around(np.abs(en_diff), decimals=2)
+                label = rf"$\mathbf{{{val}}}$" + "eV"
                 ax1.text(0.12, low_en + en_diff / 2 - add, label, ha='left', va='center',
-                         size=22)  # Label each line with orbital type
+                         size=22,color=curcolor,fontweight='bold')  # Label each line with orbital type
                 low_en = en
-                add = +0.08
+                add = -0.2
+                if curcolor == 'royalblue':
+                    curcolor = 'goldenrod'
+                else:
+                    curcolor = 'royalblue'
 
             # do for spin down
             unique_energies,unique_ind,unique_count = np.unique(np.around(energies[num_o:],decimals=1),return_inverse=True,return_counts=True)
@@ -921,27 +936,40 @@ class COGITO_TB_Model(object):
                     ax2.text(start+0.2+shift,set_ener[dorb], label, ha='center', va='bottom',size=16)  # Label each line with orbital type
                     start = start + 0.44
             # plot splitting arrows
-            low_en = unique_energies[0]
-            add = 0.08
-            for en in unique_energies[1:]:
+            #low_en = unique_energies[0] # get from last energy of spin up
+            first_over = 0.5
+            add = -0.2
+            curcolor = 'royalblue'
+            for en in unique_energies[0:]:
                 en_diff = en - low_en
-                ax2.arrow(0.1, low_en, 0, en_diff, length_includes_head=True, width=0.01, head_width=0.035,
-                          head_length=0.05, color="black")
-                label = r"$" + str(np.around(np.abs(en_diff), decimals=2)) + "$" + "eV"
-                ax2.text(0.12, low_en + en_diff / 2 - add, label, ha='left', va='center',
-                         size=22)  # Label each line with orbital type
+                ax2.arrow(0.1-first_over, low_en, 0, en_diff, length_includes_head=True, width=0.01, head_width=0.035,
+                          head_length=0.05, color=curcolor)
+                #print("range ratio",en_diff/yrange)
+                if en_diff/yrange<0.1:
+                    add = 0.4
+                val = np.around(np.abs(en_diff), decimals=2)
+                label = rf"$\mathbf{{{val}}}$" + "eV"
+                ax2.text(0.12-first_over, low_en + en_diff / 2 - add, label, ha='left', va='center',
+                         size=22,color=curcolor,fontweight='bold')  # Label each line with orbital type
                 low_en = en
-                add = +0.08
+                add = -0.2
+                first_over = 0
+                if curcolor == 'royalblue':
+                    curcolor = 'goldenrod'
+                else:
+                    curcolor = 'royalblue'
 
 
-            if ylim == (-10, 0):
-                amin = np.amin(energies[energies > -20]) - 0.5
-                amax = np.amax(energies) + 0.5
-                ylim = (amin, amax)
             ax1.set_ylim(ylim)
             ax2.set_ylim(ylim)
+            ax1.get_xaxis().set_visible(False)
+            ax2.get_xaxis().set_visible(False)
+            ax1.set_ylabel("Energy (eV)",fontsize=20)
+            ax1.set_title("Spin up",fontsize=14)
+            ax2.set_title("Spin down",fontsize=14)
+            plt.tight_layout()
             # Save the figure
-            plt.savefig(self.directory + 'field_splitting' + str(atomnum) + orbitals + '.pdf')
+            plt.savefig(self.directory + 'field_splitting' + str(atomnum) + orbitals + '.png')
             if self.show_figs:
                 plt.show()
 
@@ -970,21 +998,28 @@ class COGITO_TB_Model(object):
 
             # plot splitting arrows
             low_en = unique_energies[0]
-            add= 0.08
+            add = -0.2
+            curcolor = 'royalblue'
             for en in unique_energies[1:]:
                 en_diff = en-low_en
-                plt.arrow(0.1,low_en,0,en_diff,length_includes_head=True,width=0.01,head_width=0.035,head_length=0.05,color="black")
-                label = r"$" + str(np.around(np.abs(en_diff),decimals=2))+"$"+"eV"
-                plt.text(0.12,low_en + en_diff/2-add, label, ha='left', va='center',size=22)  # Label each line with orbital type
+                plt.arrow(0.1,low_en,0,en_diff,length_includes_head=True,width=0.01,head_width=0.035,head_length=0.05,color=curcolor)
+                val = np.around(np.abs(en_diff), decimals=2)
+                if en_diff/yrange<0.1:
+                    add = 0.4
+                label = rf"$\mathbf{{{val}}}$" + "eV"
+                plt.text(0.12,low_en + en_diff/2-add, label, ha='left', va='center',size=22,color=curcolor,fontweight='bold')  # Label each line with orbital type
                 low_en = en
-                add= +0.08
-            if ylim == (-10,0):
-                amin = np.amin(energies[energies>-20]) - 0.5
-                amax = np.amax(energies) + 0.5
-                ylim = (amin,amax)
+                add = -0.2
+                if curcolor == 'royalblue':
+                    curcolor = 'goldenrod'
+                else:
+                    curcolor = 'royalblue'
             plt.ylim(ylim)
+            plt.gca().get_xaxis().set_visible(False)
+            plt.ylabel("Energy (eV)",fontsize=20)
+            plt.tight_layout()
             # Save the figure
-            plt.savefig(self.directory + 'field_splitting'+str(atomnum)+orbitals+'.pdf')
+            plt.savefig(self.directory + 'field_splitting'+str(atomnum)+orbitals+'.png')
             if self.show_figs:
                 plt.show()
 
@@ -1091,8 +1126,7 @@ class COGITO_TB_Model(object):
         Returns:
             png: Saves a png of the DFT and COGITO bands at (self.directory+'compareDFT' + self.file_suff + extra_tag + '.png').
             txt: Saves a error values at self.directory + "DFT_band_error" + self.file_suff + extra_tag + ".txt"
-            list: Returns a list of the (averaged over the valance bands) band distance (as defined by Marzari),
-                        average maximum error, and average band error.
+            list: Returns a list of the (averaged over the valance bands) band distance (as defined by Marzari), average maximum error, and average band error.
         """
         if self.spin_polar:
             keys = [0,1]
@@ -2651,6 +2685,65 @@ class COGITO_UNIFORM(object):
         self.bond_occup = bond_occup
 
         return bond_occup
+
+    def get_all_integrated(self):
+        """
+        This function efficiently gets the ICOHP, ICOHP, and bond occupation (density matrix)
+        @return:
+        """
+
+        bond_occup = {}
+        icohp = {}
+        for key in self.keys: # plot bands for each spin
+            bond_occup[key] = self.TB_model.get_bond_occup(self, spin = key)
+            icohp[key] = bond_occup[key]*self.TB_params[key]
+
+        if not hasattr(self, 'ICO_trans'):
+            # make the size of everything smaller because most is zeros
+            trans = self.num_trans
+            old_each_dir = self.num_each_dir
+            norbs = self.num_orbs
+            round_icohp = np.around(icohp[0],decimals=4).flatten()
+            non_zero_icohp = np.arange(norbs*norbs*trans[0]*trans[1]*trans[2])[round_icohp!=0]
+            icohp_indices = np.unravel_index(non_zero_icohp, (norbs, norbs, trans[0], trans[1], trans[2]))
+            eachdir1 = np.max(icohp_indices[2]-old_each_dir[0])
+            eachdir2 = np.max(icohp_indices[3]-old_each_dir[1])
+            eachdir3 = np.max(icohp_indices[4]-old_each_dir[2])
+            new_each_dir = np.array([eachdir1,eachdir2,eachdir3],dtype=np.int_)
+            print(new_each_dir)
+            self.ICO_eachdir = new_each_dir
+            self.ICO_trans = new_each_dir*2 + 1
+            print("trans for icohp:",self.ICO_trans)
+
+        small_overlap = {}
+        small_hams = {}
+        icoop = {}
+        for key in self.keys: # reduce the size of bond_occup and overlap
+            old_each_dir = self.num_each_dir
+            new_each_dir = self.ICO_eachdir
+            bond_occup[key] = bond_occup[key][:,:, old_each_dir[0] - new_each_dir[0]: old_each_dir[0] + new_each_dir[0] + 1,
+                                    old_each_dir[1] - new_each_dir[1]:old_each_dir[1] + new_each_dir[1] + 1,
+                                    old_each_dir[2] - new_each_dir[2]:old_each_dir[2] + new_each_dir[2] + 1]
+            small_overlap[key] = self.overlaps_params[key][:,:, old_each_dir[0] - new_each_dir[0]: old_each_dir[0] + new_each_dir[0] + 1,
+                                    old_each_dir[1] - new_each_dir[1]:old_each_dir[1] + new_each_dir[1] + 1,
+                                    old_each_dir[2] - new_each_dir[2]:old_each_dir[2] + new_each_dir[2] + 1]
+            small_hams[key] = self.TB_params[key][:,:, old_each_dir[0] - new_each_dir[0]: old_each_dir[0] + new_each_dir[0] + 1,
+                                    old_each_dir[1] - new_each_dir[1]:old_each_dir[1] + new_each_dir[1] + 1,
+                                    old_each_dir[2] - new_each_dir[2]:old_each_dir[2] + new_each_dir[2] + 1]
+            icohp[key] = bond_occup[key]*small_hams[key]
+            icoop[key] = bond_occup[key]*small_overlap[key]
+
+        self.bond_occup = bond_occup
+        self.small_overlap = small_overlap
+        self.small_hams = small_hams
+        self.ICOOP = icoop
+        self.ICOHP = icohp
+
+        for key in self.keys:
+            np.save(self.directory+"small_ham"+self.file_suff+str(key),self.small_hams[key])
+            np.save(self.directory+"small_over"+self.file_suff+str(key),self.small_overlap[key])
+
+        return bond_occup, icohp, icoop
 
     def save_bond_occup(self):
         """
@@ -5563,34 +5656,29 @@ class COGITO_UNIFORM(object):
         This constructs three json files:
         all_bonds.json : includes bonds between all atoms that have a elements above the minimum_cohp.
         all_unique_bonds : groups the all_bonds into unique ones for more interpretable viewing.
-        all_atoms.json : all onsite atom information, including the bond orb_orb_dict + added onsite and mulliken
-                        orbital occupations and partial charges + lone-pair-like energy (cohp) contributions.
+        all_atoms.json : all onsite atom information, including the bond orb_orb_dict + added onsite and mulliken orbital occupations and partial charges + lone-pair-like energy (cohp) contributions.
         The structure of the all_bonds json:
         {"uniq_bonds by "el1_el2_dist_energy": {
-                        "bondlength": float, "degeneracy": int, "cohp": float , "coop": float, "bondmagmom": float,
-                "all atom-atom bonds in this set by 'atm1_atm2_T1_T2_T3':{  # just 'atm1_atm2' is not enough since atoms can bond outside unit cell
-                                "atmorbs1, atmorbs2": [[int...],[int...]] # used to reference orbital energy, radius, and shape
-                                "cohp": [float...] , "coop": [float...], "bondlength": float, "bondmagmom": float, "angle"?:float,  # same data just without averaging
-                        "orb-orb e.g. 's-d'": {
-                                        "cohp": [float...], "coop": [float...], # is referenced to spin state. For non spin-polarized: [float], for spin-polar: [float,float]
-                                        "orbnums1, orbnums2": [[int...],[int...]] for orbital numbers e.g. for s-p: [[0],[1,2,3]],  # orbital number referenced to atom already selected
-                                        "bond_occup_matrix": [numorbs1×numorbs2...], "orb_ediff_matrix": [numorbs1×numorbs2...],
-                                        "cohp_matrix": [numorbs1×numorbs2...], "coop_matrix": [numorbs1×numorbs2...],
-                                        "S_matrix": [numorbs1×numorbs2...], "H_matrix": [numorbs1×numorbs2...],
-                        }
-                }
+        "bondlength": float, "degeneracy": int, "cohp": float , "coop": float, "bondmagmom": float,
+        "all atom-atom bonds in this set by 'atm1_atm2_T1_T2_T3':{  # just 'atm1_atm2' is not enough since atoms can bond outside unit cell
+        "atmorbs1, atmorbs2": [[int...],[int...]] # used to reference orbital energy, radius, and shape
+        "cohp": [float...] , "coop": [float...], "bondlength": float, "bondmagmom": float, "angle"?:float,  # same data just without averaging
+        "orb-orb e.g. 's-d'": {
+        "cohp": [float...], "coop": [float...], # is referenced to spin state. For non spin-polarized: [float], for spin-polar: [float,float]
+        "orbnums1, orbnums2": [[int...],[int...]] for orbital numbers e.g. for s-p: [[0],[1,2,3]],  # orbital number referenced to atom already selected
+        "bond_occup_matrix": [numorbs1×numorbs2...], "orb_ediff_matrix": [numorbs1×numorbs2...],
+        "cohp_matrix": [numorbs1×numorbs2...], "coop_matrix": [numorbs1×numorbs2...],
+        "S_matrix": [numorbs1×numorbs2...], "H_matrix": [numorbs1×numorbs2...],
+        }
+        }
         }
         @return:
         """
 
         do_coop = True
-        # get the cohp
-        if not hasattr(self, 'ICOHP'):
-            self.get_ICOHP()
-        if not hasattr(self, 'ICOOP'):
-            self.get_ICOOP()
-        if not hasattr(self, 'bond_occup'):
-            self.get_bond_occup()
+        # get all the stuff
+        if not (hasattr(self, 'ICOHP') and hasattr(self, 'ICOOP') and hasattr(self, 'bond_occup')):
+            self.get_all_integrated()
         icoop_orb = self.ICOOP
         icohp_orb = self.ICOHP
         overlaps = self.small_overlap
@@ -7723,6 +7811,7 @@ def run_cogito_model(dir:str="./",tag:str="",eigfile:str="EIGENVAL",save_quality
     By toggling the various 'save_*' options (all default true), this function can also plot parameter decay and band error,
     make the crystal bond diagrams (w or w/o the interactive COHP plots), and save ICOHP and ICOOP for more computationally effecient analysis.
     This can also plot the crystal field splitting of orbital energy levels on an atoms specified by a supplied 'crystal_field' list.
+
     Args:
         dir (str): The directory that contains the COGITO output files.
         tag (str): The tag appended to COGITO output files.
@@ -7794,10 +7883,10 @@ def main(argv=None):
     analyzer_args.add_argument("--dir",type=str,help="The directory that contains the COGITO output files.",default="./")
     analyzer_args.add_argument("--tag",type=str,help="The tag appended to COGITO output files.",default="")
     analyzer_args.add_argument("--eigfile",type=str,help="The EIGVAL file to use for compare_to_DFT(). Note is appended to dir",default="EIGENVAL")
-    analyzer_args.add_argument("--save_quality_info",type=bool,help="Whether to make hopping/overlap decay plots and DFT band error analysis.",default=True)
-    analyzer_args.add_argument("--save_crystal_bonds",type=bool,help="Whether to make and save the crystal bonds plot.",default=True)
-    analyzer_args.add_argument("--save_bondswCOHP",type=bool,help="Whether to make and save the crystal bonds plot interacting with the COHP vs energy.",default=True)
-    analyzer_args.add_argument("--save_ico",type=bool,help="Whether to save integrated COHP and COOP data for speedy use in COGITOico.py.",default=True)
+    analyzer_args.add_argument("--no_save_quality_info",help="If called, does not make hopping/overlap decay plots and DFT band error analysis.",action='store_true') #not #
+    analyzer_args.add_argument("--no_save_crystal_bonds",help="If called, does not make and save the crystal bonds plot.",action='store_true') #not #
+    analyzer_args.add_argument("--no_save_bondswCOHP",help="If called, does not make and save the crystal bonds plot interacting with the COHP vs energy.",action='store_true') #not #
+    analyzer_args.add_argument("--no_save_ico",help="If called, does not save integrated COHP and COOP data for speedy use in COGITOico.py.",action='store_true') #not #
     analyzer_args.add_argument("--max_dist",type=float,help="Maximum interatomic distance for including hopping or overlap parameters.",default=15)
     analyzer_args.add_argument("--min_val",type=float,help="The minimum value cutoff to include parameters.",default=0.00001)
     analyzer_args.add_argument("--auto_label",type=str,help="Determines how to partition charge for crystal bond plots. 'mulliken' does Mulliken paritioning to atomic site, 'full' doesn't repartition but plots charges on atoms and bonds.",default="full")
@@ -7808,9 +7897,9 @@ def main(argv=None):
 
     args = analyzer_args.parse_args(argv)
 
-    run_cogito_model(dir=args.dir,tag=args.tag,eigfile=args.eigfile,save_quality_info=args.save_quality_info,
-                     save_crystal_bonds=args.save_crystal_bonds,save_bondswCOHP=args.save_bondswCOHP,
-                     save_ico=args.save_ico,max_dist=args.max_dist,min_val=args.min_val,auto_label=args.auto_label,
+    run_cogito_model(dir=args.dir,tag=args.tag,eigfile=args.eigfile,save_quality_info=not args.no_save_quality_info,
+                     save_crystal_bonds=not args.no_save_crystal_bonds,save_bondswCOHP=not args.no_save_bondswCOHP,
+                     save_ico=not args.no_save_ico,max_dist=args.max_dist,min_val=args.min_val,auto_label=args.auto_label,
                      densify=args.densify,energy_cutoff=args.energy_cutoff,bond_max=args.bond_max,
                      crystal_field=args.crystal_field,)
 

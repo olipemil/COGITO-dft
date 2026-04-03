@@ -1,0 +1,50 @@
+@file{POSCAR,
+file_name="POSCAR",
+tags=['required','input'],
+run_with=["COGITO.__init__()"],
+more_info="VASP structure file. Always read on initialization regardless of readmode. Provides lattice vectors, atom types, and fractional atom coordinates used to build the real-space structure and local environment tensors.",
+}
+
+@file{WAVECAR,
+file_name="WAVECAR",
+tags=['required','input'],
+run_with=["COGITO.__init__()"],
+needed_tags="readmode=False (default)",
+more_info="VASP binary wavefunction file containing plane-wave Bloch function coefficients for all k-points and bands. The primary source for orbital projection and convergence. Not read when readmode=True, in which case the VASP calculation directory is not needed.",
+}
+
+@file{POTCAR,
+file_name="POTCAR",
+tags=['required','input'],
+run_with=["COGITO.__init__()","COGITO.get_orbs_fromPOT()"],
+more_info="VASP pseudopotential file. Read on initialization and again during orbital setup. Used to determine which orbital types to include (s, p, d, semi-core), extract pseudo and all-electron radial orbital shapes, and read atomic orbital energies for the energy cutoff filters minimum_orb_energy and min_duplicate_energy.",
+}
+
+@file{OUTCAR,
+file_name="OUTCAR",
+tags=['required','input'],
+run_with=["COGITO.__init__()","COGITO.fit_to_atomic_orb()","COGITO.expand_irred_kgrid()"],
+more_info="VASP output file. Read on initialization to extract the XC(G=0) exchange-correlation energy, applied as a rigid energy shift to align the average electrostatic potential to zero. Also read in fit_to_atomic_orb() and expand_irred_kgrid() to obtain the magnetic moment per atom, which is used to account for magnetic symmetry when considering whether orbitals are symmetrically identical and using pymatgen to find the symmetry operators for expanding the irreducible k-grid.",
+}
+
+@file{vasprun,
+file_name="vasprun.xml",
+tags=['optional','input','quality'],
+run_with=["COGITO.__init__()"],
+more_info="VASP XML output file. Automatically read if present in the calculation directory. Provides k-point weights, Fermi energy, band gap, spin-polarization flag, eigenvalues, and complete/projected DOS. Determines spin_polar automatically if provided. Required for DOS-related functionality.",
+}
+
+@file{IBZKPT,
+file_name="IBZKPT",
+tags=['optional','input'],
+run_with=["COGITO.__init__()"],
+more_info="VASP irreducible Brillouin zone k-point file. Automatically read if present. Overwrites k-points parsed from vasprun.xml with higher-precision values (14 decimal places vs. 8). Recommended for accurate k-point coordinates.",
+}
+
+@file{orbitals,
+file_name="orbitals<tag>.npy",
+tags=['optional','input'],
+run_with=["COGITO.read_recip_rad_orbs()","COGITO.generate_TBmodel()"],
+needed_tags="start_from_orbnpy=True",
+more_info="Converged COGITO orbital coefficients from a previous run. Written by COGITO. When start_from_orbnpy=True, read via read_recip_rad_orbs() to skip the orbital convergence loops entirely and proceed directly to TB parameter generation.",
+}

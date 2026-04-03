@@ -1,0 +1,221 @@
+@file{all_unique_bonds,
+file_name="all_unique_bonds<tag>.json",
+tags=['required','output'],
+run_with=["COGITO_UNIFORM.jsonify_bonddata()","run_cogito_model()"],
+run_CLI="COGITOpost.py --dir DIR",
+more_info="JSON mapping each symmetry-unique bond type (by element pair and distance) to its averaged iCOHP energy, iCOOP charge, degeneracy, and bond length. Primary output for bond-level chemical analysis. Read by COGITOico for charge and energy partitioning.",
+file_img='PbO/all_unique_bonds.json',
+}
+
+@file{all_bonds,
+file_name="all_bonds<tag>.json",
+tags=['required','output'],
+run_with=["COGITO_UNIFORM.jsonify_bonddata()","run_cogito_model()"],
+run_CLI="COGITOpost.py --dir DIR",
+more_info="JSON with per-bond data for every atom pair within the cutoff distance. Includes bond length, per-orbital iCOHP and iCOOP contributions, bond occupation matrix, and (if spin_polar=True) bond magnetic moment. Used alongside all_unique_bonds for detailed bond decomposition.",
+file_img='PbO/all_bonds.json',
+}
+
+@file{all_atoms,
+file_name="all_atoms<tag>.json",
+tags=['required','output'],
+run_with=["COGITO_UNIFORM.jsonify_bonddata()","run_cogito_model()"],
+run_CLI="COGITOpost.py --dir DIR",
+more_info="JSON with per-atom onsite data including onsite and Mulliken partial charges, orbital occupations (by orbital type and individual orbital), orbital energies, and (if spin_polar=True) onsite and Mulliken magnetic moments. Primary source for atomic charge and magnetization analysis.",
+file_img='PbO/all_atoms.json',
+}
+
+@file{bond_info,
+file_name="bond_info<tag>.txt",
+tags=['optional','output'],
+run_with=["COGITO_UNIFORM.jsonify_bonddata()","run_cogito_model()"],
+run_CLI="COGITOpost.py --dir DIR",
+needed_tags="make_bond_info_txt=True (default)",
+more_info="Human-readable text table of all symmetry-unique bonds sorted by distance. Columns: atom pair, bond length, iCOHP energy per bond, iCOOP charge per bond, (magnetic moment if spin_polar), degeneracy, and total iCOHP per unit cell. Totals are printed at the bottom.",
+file_img='PbO/bond_info.txt',
+}
+
+@file{ICOHP,
+file_name="ICOHP<spin>.npy",
+tags=['optional','output'],
+run_with=["COGITO_UNIFORM.save_ICOHP()","run_cogito_model()"],
+run_CLI="COGITOpost.py --dir DIR",
+skip_CLI="COGITOpost.py --dir DIR --no_save_ico",
+needed_tags="save_ico=True (default)",
+more_info="Numpy array of the integrated COHP (iCOHP) matrix truncated to only include non-zero translations. Shape: (num_orbs, num_orbs, t1, t2, t3). Spin index in filename: 0 for spin-up (or non-spin-polarized), 1 for spin-down. Read by COGITOico for fast bond energy calculations.",
+}
+
+@file{ICOOP,
+file_name="ICOOP<spin>.npy",
+tags=['optional','output'],
+run_with=["COGITO_UNIFORM.save_ICOOP()","run_cogito_model()"],
+run_CLI="COGITOpost.py --dir DIR",
+skip_CLI="COGITOpost.py --dir DIR --no_save_ico",
+needed_tags="save_ico=True (default)",
+more_info="Numpy array of the integrated COOP (iCOOP) matrix truncated to non-zero translations. Same shape and spin convention as ICOHP. Encodes bond charge (electron count) per orbital pair per translation vector. Read by COGITOico.",
+}
+
+@file{bond_occup,
+file_name="bond_occup<spin>.npy",
+tags=['optional','output'],
+run_with=["COGITO_UNIFORM.save_bond_occup()","run_cogito_model()"],
+run_CLI="COGITOpost.py --dir DIR",
+skip_CLI="COGITOpost.py --dir DIR --no_save_ico",
+needed_tags="save_ico=True (default)",
+more_info="Numpy array of the bond occupation density matrix truncated to non-zero translations. Same shape and spin convention as ICOHP. Represents the electron density shared per orbital pair, prior to energy-weighting. Read by COGITOico.",
+}
+
+@file{small_ham,
+file_name="small_ham<spin>.npy",
+tags=['optional','output'],
+run_with=["COGITO_UNIFORM.get_all_integrated()","COGITO_UNIFORM.jsonify_bonddata()","run_cogito_model()"],
+run_CLI="COGITOpost.py --dir DIR",
+more_info="Numpy array of the TB Hamiltonian (TBparams) truncated to only the translations needed for the iCOOP calculation. Saved automatically when get_ICOOP() runs as part of save_ICOOP(). Used by COGITOico for fast on-the-fly reconstruction.",
+}
+
+@file{small_over,
+file_name="small_over<spin>.npy",
+tags=['optional','output'],
+run_with=["COGITO_UNIFORM.get_all_integrated()","COGITO_UNIFORM.jsonify_bonddata()","run_cogito_model()"],
+run_CLI="COGITOpost.py --dir DIR",
+more_info="Numpy array of the orbital overlap matrix (overlaps) truncated to the same translation set as small_ham. Companion file to small_ham. Read by COGITOico for reconstruction of the generalized eigenvalue problem on reduced supercells.",
+}
+
+@file{DFT_band_error,
+file_name="DFT_band_error<tag>.txt",
+tags=['optional','output','quality'],
+run_with=["COGITO_TB_Model.compare_to_DFT()","run_cogito_model()"],
+run_CLI="COGITOpost.py --dir DIR",
+skip_CLI="COGITOpost.py --dir DIR --no_save_quality_info",
+needed_tags="save_quality_info=True (default), EIGENVAL file present",
+more_info="Text file summarizing the agreement between COGITO TB and DFT band energies: average error in valence bands, band distance (Marzari metric), maximum valence band error, average error in bottom 3 eV of conduction bands, and average conduction band error. Key file for validating TB model accuracy.",
+file_img='PbO/DFT_band_error.txt',
+}
+
+@file{compareDFT,
+file_name="compareDFT<tag>.png",
+tags=['optional','output','quality'],
+run_with=["COGITO_TB_Model.compare_to_DFT()","run_cogito_model()"],
+run_CLI="COGITOpost.py --dir DIR",
+skip_CLI="COGITOpost.py --dir DIR --no_save_quality_info",
+needed_tags="save_quality_info=True (default), EIGENVAL file present",
+more_info="Matplotlib figure overlaying DFT band energies (black) against COGITO TB band energies (red) at all k-points from EIGENVAL. Visual companion to DFT_band_error.txt. X-axis is k-point index; y-axis is energy in eV.",
+file_img='PbO/compareDFT.png',
+}
+
+@file{tbparams_decay,
+file_name="tbparams_decay.png",
+tags=['optional','output','quality'],
+run_with=["COGITO_TB_Model.plot_hopping()","run_cogito_model()"],
+run_CLI="COGITOpost.py --dir DIR",
+skip_CLI="COGITOpost.py --dir DIR --no_save_quality_info",
+needed_tags="save_quality_info=True (default)",
+more_info="Scatter plot of log10(|TB parameter|) vs. interorbital distance. Should show approximately linear decay (exponential falloff). Useful for diagnosing whether the hopping cutoff distance is appropriate or if there are unexpectedly large long-range hoppings.",
+file_img='PbO/tbparams_decay.png',
+}
+
+@file{overlaps_decay,
+file_name="overlaps_decay.png",
+tags=['optional','output'],
+run_with=["COGITO_TB_Model.plot_overlaps()","run_cogito_model()"],
+run_CLI="COGITOpost.py --dir DIR",
+skip_CLI="COGITOpost.py --dir DIR --no_save_quality_info",
+needed_tags="save_quality_info=True (default)",
+more_info="Scatter plot of log10(|overlap parameter|) vs. interorbital distance. Companion to tbparams_decay.png. Overlaps should be roughly proportional to hopping parameters, expecially at short distances.",
+file_img='PbO/overlaps_decay.png',
+}
+
+@file{crystal_bonds,
+file_name="crystal_bonds.html",
+tags=['optional','output'],
+run_with=["COGITO_UNIFORM.get_bonds_figure()","COGITO_UNIFORM.get_bonds_charge_figure()","run_cogito_model()"],
+run_CLI="COGITOpost.py --dir DIR",
+skip_CLI="COGITOpost.py --dir DIR --no_save_crystal_bonds",
+needed_tags="save_crystal_bonds=True (default)",
+more_info="Interactive Plotly HTML of the crystal structure with bonds colored and sized by iCOHP bond energy (or iCOOP bond charge). Atoms can be colored by Mulliken or full charge/magnetic moment using the auto_label parameter. Hoverable bond lines show per-orbital energy decomposition.",
+file_img='PbO/crystal_bonds.html',
+}
+
+@file{bond_cohp_plot,
+file_name="bond_cohp_plot.html",
+tags=['optional','output'],
+run_with=["COGITO_UNIFORM.get_crystal_plus_COHP()","run_cogito_model()"],
+run_CLI="COGITOpost.py --dir DIR",
+skip_CLI="COGITOpost.py --dir DIR --no_save_bondswCOHP",
+needed_tags="save_bondswCOHP=True (default)",
+more_info="Interactive Plotly HTML combining the crystal bond view (left) with a pCOHP-vs-energy DOS plot (right). Hovering over a bond in the crystal view highlights its orbital-resolved COHP contribution in the energy plot. Generated by get_crystal_plus_COHP(), which calls get_COHP_DOS_bybond() internally.",
+file_img='PbO/bond_cohp_plot.html',
+}
+
+@file{crystal_bond_density,
+file_name="crystal_bond_density.html",
+tags=['optional','output'],
+run_with=["COGITO_UNIFORM.get_bond_density_figure()"],
+more_info="Interactive Plotly HTML showing the crystal structure with an isosurface of real-space bond electron density overlaid on the structure. Bond density is computed from the COOP occupation matrix projected back onto a real-space grid. Useful for visualizing where electrons are shared between atoms.",
+file_img='PbO/crystal_bond_density.html',
+}
+
+@file{COHP_DOS,
+file_name="COHP_DOS.png",
+tags=['optional','output'],
+run_with=["COGITO_UNIFORM.get_COHP()"],
+more_info="Matplotlib figure of the orbital-projected COHP plotted versus energy (DOS-style). X-axis is COHP (inverted by convention); y-axis is energy in eV. Negative COHP = bonding, positive = antibonding. Generated by COGITO_UNIFORM.get_COHP() for a specific set of orbital pairs.",
+file_img='PbO/COHP_DOS.png',
+}
+
+@file{COOP_DOS,
+file_name="COOP_DOS.png",
+tags=['optional','output'],
+run_with=["COGITO_UNIFORM.get_COOP()"],
+more_info="Matplotlib figure of the orbital-projected COOP plotted versus energy. Analogous to COHP_DOS.png but for the overlap-weighted bond charge (COOP). Useful for distinguishing bonding character from energy-based COHP analysis.",
+}
+
+@file{projectedDOS,
+file_name="<elem>projectedDOS.png",
+tags=['optional','output'],
+run_with=["COGITO_UNIFORM.get_projectedDOS()"],
+more_info="Matplotlib figure of the orbital-projected DOS for a given element. Shows per-orbital-type projections (s, p, d) plus total DOS for all atoms of the element. Filename prefix is the element symbol (e.g. PbprojectedDOS.png).",
+file_img='PbO/OprojectedDOS.png',
+}
+
+@file{bandstruc,
+file_name="bandstruc.png",
+tags=['optional','output'],
+run_with=["COGITO_BAND.get_bandstructure()"],
+more_info="Matplotlib figure of the COGITO TB band structure along a high-symmetry k-path. K-path is generated automatically by pymatgen. Axis labels show high-symmetry point labels. Generated by the COGITO_BAND class, which interpolates the TB model onto a dense k-path.",
+file_img='PbO/bandstruc.png',
+}
+
+@file{COHP_BS,
+file_name="COHP_BS<atms>.html",
+tags=['optional','output'],
+run_with=["COGITO_BAND.get_COHP()"],
+more_info="Interactive Plotly HTML of the COHP-projected band structure along a high-symmetry path. Color encodes the COHP value per k-point per band for the specified orbital pair. Filename suffix encodes the two atom types involved (e.g. COHP_BSPb-O.html).",
+file_img='PbO/COHP_BS.html',
+}
+
+@file{COOP_BS,
+file_name="COOP_BS.html",
+tags=['optional','output'],
+run_with=["COGITO_BAND.get_COOP()"],
+more_info="Interactive Plotly HTML of the COOP-projected band structure. Analogous to COHP_BS but uses the overlap-weighted bond charge (COOP) for coloring. Shows bonding/antibonding character per k-point per band.",
+file_img='PbO/COOP_BS.html',
+}
+
+@file{projectedBS,
+file_name="projectedBS<elem>.html",
+tags=['optional','output'],
+run_with=["COGITO_BAND.get_projectedBS()"],
+more_info="Interactive Plotly HTML of the orbital-projected band structure for a given element. Each band is colored by the orbital-character weight for the specified element/orbital combination. Filename includes the element label.",
+file_img='PbO/projectedBS.html',
+}
+
+@file{field_splitting,
+file_name="field_splitting<atomnum><orbitals>.png",
+tags=['optional','output'],
+run_with=["COGITO_TB_Model.plot_crystal_field()","run_cogito_model()"],
+run_CLI="COGITOpost.py --dir DIR --crystal_field ATOM_INDEX",
+needed_tags="crystal_field=[...] (default empty, must be set)",
+more_info="PDF figure of the crystal field energy level splitting diagram for the specified atom. Shows on-site orbital energies as horizontal lines grouped by degeneracy, with energy splitting arrows and labels. Labels include orbital type (s,p,d) and orbital radii. Requires orb_converg_info.json to read orbital radii for annotation. One file per atom in the crystal_field list.",
+file_img='PbO/field_splitting0.png',
+}
