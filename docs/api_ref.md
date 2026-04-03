@@ -40,7 +40,7 @@ Post-processing and plotting tools for COGITO results.
 :caption: Guide
 :hidden:
 
-home
+index
 tutorial
 file_struc
 ```
