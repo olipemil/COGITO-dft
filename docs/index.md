@@ -101,3 +101,24 @@ Click images for detailed tutorials or use the links below to jump directly to A
     </div>
 </div>
 
+```{toctree}
+:maxdepth: 1
+:caption: Guide
+:hidden:
+
+index
+tutorial
+file_struc
+```
+
+```{toctree}
+:maxdepth: 2
+:caption: API Reference
+:hidden:
+api_ref
+api/COGITO
+api/COGITOanalyze
+api/COGITOico
+api/COGITOpost
+```
+

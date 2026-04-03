@@ -49,7 +49,7 @@ file_struc
 :maxdepth: 2
 :caption: API Reference
 :hidden:
-
+api_ref
 api/COGITO
 api/COGITOanalyze
 api/COGITOico
