@@ -1,8 +1,0 @@
-@file{uniq_id,
-file_name="overlaps.txt",
-tags=['required','quality'],
-run_with=["run_cogito()","COGITO.generate_TBmodel()"],
-needed_tags="save_output=True",
-more_info="Additional info about overlaps.txt",
-file_img=example.png,
-}

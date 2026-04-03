@@ -1,5 +1,5 @@
 # COGITO - Home
-
+<p class="page-subtitle">Quantum chemical bonding from plane-wave DFT</p>
 
 ## Welcome to COGITO!
 
@@ -91,7 +91,7 @@ Click images for detailed tutorials or use the links below to jump directly to A
     </div>
     <div class="image-container" style="width: 170px;">
         <img src="Si/COHP_DOS.png" alt="Image 2" style="width: 100%; height: 100%; border: 0;" class="image-hover">
-        <div class="overlay-text">Plot COHP/COOP energy density</div>
+        <div class="overlay-text" style="justify-content: center">Plot COHP/COOP energy density</div>
     </div>
     <div class="image-container" style="width: 380px;">
         <a href="tutorial.html#use-cogito-to-plot-crystal-bonds">
