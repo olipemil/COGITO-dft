@@ -2345,8 +2345,8 @@ class COGITO(object):
 
         Args:    
             num_steps (int): Maximum number of steps to perform the convergence.
-                        Setting equal to 0 with run the standard direct algorithm where ''|X_a> = sum_n(c_na |Y_n>)''.
-                        Where ''|Y_n>'' are the set of band (equal to number of orbitals) of the highest projection.
+                        Setting equal to 0 with run the standard direct algorithm where ``|X_a> = sum_n(c_na |Y_n>)``.
+                        Where ``|Y_n>`` are the set of band (equal to number of orbitals) of the highest projection.
         """
         
         # once orbitals are found, orbitals on the same atom are Lowdin orthogonalized using the ae overlap
