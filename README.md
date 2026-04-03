@@ -1,6 +1,6 @@
 # COGITO - Crystal Orbital Guided Iteration To atomic-Orbitals
 
-[![Website](https://img.shields.io/badge/website-live-green?style=flat-square)](https://olipemil.github.io/cogito-website)
+[![Website](https://img.shields.io/badge/website-live-green?style=flat-square)](https://cogito-dft.readthedocs.io/)
 [![COGITO](https://img.shields.io/badge/main%20repo-COGITO-blue?style=flat-square)](https://github.com/olipemil/COGITO)
 
 This repository hosts the code for COGITO, a tool for obtaining quantum chemistry from plane wave DFT calculations. The main codes file are COGITO.py, COGITOpost.py, and COGITOico.py.
