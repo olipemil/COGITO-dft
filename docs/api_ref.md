@@ -1,4 +1,4 @@
-# COGITO
+# Overview
 
 **COGITO** (Chemically Interpretable Tight-binding from Orbitals) is a Python toolkit for
 chemically interpretable tight-binding and bonding analysis from DFT calculations.

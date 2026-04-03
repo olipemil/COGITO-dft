@@ -52,7 +52,8 @@ templates_path = ["_templates"]
 exclude_patterns = ["_build"]
 
 html_theme = "furo"
-html_title = "COGITO documentation"
+html_title = "COGITO peer into the quantum blackbox"
+html_subtitle = "Peer into the quantum blackbox"
 
 html_static_path = ["_static"]
 html_css_files = ["css/custom.css", "css/file_form.css"]

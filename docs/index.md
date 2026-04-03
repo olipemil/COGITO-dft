@@ -21,21 +21,21 @@ Observe the bonding in the α-PbO structure by hovering over the bond lines. Sol
 :link: tutorial
 :link-type: doc
 
-Core class for reading VASP output and projecting wavefunctions onto atomic orbitals.
+Overview of installation and workflow. Short examples of key features.
 :::
 
-:::{grid-item-card} inputs/outputs guide
+:::{grid-item-card} Inputs/outputs guide
 :link: file_struc
 :link-type: doc
 
-Tools for analyzing tight-binding Hamiltonians and band structures.
+Compressive guide of inputs and outputs to COGITO modules.
 :::
 
 :::{grid-item-card} API
 :link: api_ref
 :link-type: doc
 
-Tools for analyzing tight-binding Hamiltonians and band structures.
+Complete documentation of COGITO modules. 
 :::
 
 ::::
@@ -82,7 +82,7 @@ Click images for detailed tutorials or use the links below to jump directly to A
 
 ### Plot with uniform k-grid
 
-<div style="display: flex;">
+<div style="display: flex; justify-content: space-around">
     <div class="image-container" style="width: 200px;">
         <a href="tutorial.html#projectdos">
             <img src="Si/SiprojectedDOS.png" alt="Image 2" style="width: 100%; height: 100%; border: 0;" class="image-hover">
