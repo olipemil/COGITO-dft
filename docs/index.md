@@ -1,4 +1,4 @@
-# COGITO -<span style="font-size: 0.75em; font-weight: normal;"> insight from the quantum blackbox</span>
+# COGITO -<span style="font-size: 0.75em; font-weight: normal;"> Decoding the Quantum Black Box</span>
 
 ## Welcome to COGITO!
 
