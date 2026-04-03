@@ -7,14 +7,14 @@ This repository hosts the code for COGITO, a tool for obtaining quantum chemistr
 
 ## Quick Start
 
-**Visit the live website:** [**cogito-website.github.io**](https://olipemil.github.io/cogito-website)
+**Visit the live website:** [**cogito-dft.readthedocs.io**](https://cogito-dft.readthedocs.io/)
 
 | Section | Description |
 |---------|-------------|
-| [Installation](https://olipemil.github.io/cogito-website/examples/installation_setup.html) | Get started with COGITO setup |
-| [Tutorial](https://olipemil.github.io/cogito-website/tutorial/) | Step-by-step analysis workflow |
-| [File Guide](https://olipemil.github.io/cogito-website/examples/) | Interactive guide of inputs and outputs |
-| [API Docs](https://olipemil.github.io/cogito-website/api/) | Complete function reference |
+| [Installation](https://cogito-dft.readthedocs.io/en/latest/tutorial.html) | Get started with COGITO setup |
+| [Tutorial](https://cogito-dft.readthedocs.io/en/latest/tutorial.html) | Step-by-step analysis workflow |
+| [File Guide](https://cogito-dft.readthedocs.io/en/latest/file_struc.html) | Interactive guide of inputs and outputs |
+| [API Docs](https://cogito-dft.readthedocs.io/en/latest/api_ref.html) | Complete function reference |
 
 **Basic Workflow:**
 
