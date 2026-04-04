@@ -1,4 +1,4 @@
-# COGITO -<span style="font-size: 0.75em; font-weight: normal;"> Decoding the Quantum Black Box</span>
+# COGITO -<span style="font-size: 0.70em; font-weight: normal;"> Insights from the Quantum Blackbox</span>
 
 ## Welcome to COGITO!
 
@@ -8,7 +8,7 @@ Observe the bonding in the α-PbO structure by hovering over the bond lines. Sol
 
 <div style="display: flex; justify-content: center;">
     <div class="image-container" style="height: 450px; width: 500px; background-color: transparent;">
-        <iframe src="PbO/crystal_bonds.html" style="transform: scale(0.70)  translate(-90px, -100px); transform-origin: top left; width: 175%; height: 175%; border: 0;"></iframe>
+        <iframe src="PbO/crystal_bonds.html" style="transform: scale(0.70)  translate(-60px, -60px); transform-origin: top left; width: 165%; height: 165%; border: 0; background: transparent;" allowtransparency="true"></iframe>
     </div>
 </div>
 
