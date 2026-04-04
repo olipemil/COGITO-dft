@@ -6,7 +6,7 @@ the COGITO tight binding model. The workflow below provides the general outline.
 ## Workflow
 
 <div class="image-container" style="justify-content: center; display: flex">
-	<iframe src="workflow_diagram.html" style="width: 100%; height: 420px; background: transparent;" allowtransparency="true"></iframe>
+	<iframe src="workflow_diagram.html" style="width: 100%; height: 420px;"></iframe>
 </div>
 
 ## Run VASP
@@ -159,7 +159,7 @@ my_CoBS.get_projectedBS({"Si":["s"]})
 
 <div style="display: flex; justify-content: center;">
     <div class="image-container" style="height: 500px; width: 500px;">
-        <iframe src="Si/projectedBS.html" style="width: 100%; height: 95%; border: 0; background: transparent;" allowtransparency="true"></iframe>
+        <iframe src="Si/projectedBS.html" style="width: 100%; height: 95%; border: 0;"></iframe>
     </div>
 </div>
 
@@ -184,7 +184,7 @@ my_CoBS.make_COHP_dashapp()
 
 <div style="display: flex; justify-content: center;">
     <div class="image-container" style="height: 500px; width: 500px;">
-        <iframe src="Si/COHP_BS.html" style="width: 100%; height: 95%; border: 0; background: transparent;" allowtransparency="true"></iframe>
+        <iframe src="Si/COHP_BS.html" style="width: 100%; height: 95%; border: 0;"></iframe>
     </div>
 </div>
 
@@ -271,6 +271,6 @@ my_CoUN.get_bonds_figure(energy_cutoff=0.05,bond_max=3)
 
 <div style="display: flex; justify-content: center;">
     <div class="image-container" style="height: 400px; width: 500px; background-color: transparent;">
-        <iframe src="Si/crystal_bonds.html" style="transform: scale(0.75) translate(-40px, -40px); transform-origin: top left; width: 150%; height: 150%; border: 0; background: transparent;" allowtransparency="true"></iframe>
+        <iframe src="Si/crystal_bonds.html" style="transform: scale(0.75) translate(-40px, -40px); transform-origin: top left; width: 150%; height: 150%; border: 0;"></iframe>
     </div>
 </div>
