@@ -6,7 +6,7 @@ the COGITO tight binding model. The workflow below provides the general outline.
 ## Workflow
 
 <div class="image-container" style="justify-content: center; display: flex">
-	<iframe src="workflow_diagram.html" style="width: 100%; height: 420px"></iframe>
+	<iframe src="workflow_diagram.html" style="width: 100%; height: 420px; background: transparent;" allowtransparency="true"></iframe>
 </div>
 
 ## Run VASP
@@ -95,10 +95,10 @@ Note: The overlap and hopping plots should show a rough linear decay
 
 <div style="display: flex; justify-content: center;">
     <div class="image-container">
-        <img src="Si/overlaps_decay.png" alt="Image 2" height="90%" width="90%" style="border: 0;">
+        <img src="Si/overlaps_decay.png" alt="Image 2" height="90%" width="90%" style="border: 0; background: transparent;" allowtransparency="true">
     </div>
     <div class="image-container">
-        <img src="Si/tbparams_decay.png" alt="Image 2" height="90%" width="90%" style="border: 0;">
+        <img src="Si/tbparams_decay.png" alt="Image 2" height="90%" width="90%" style="border: 0; background: transparent;" allowtransparency="true">
     </div>
 </div>
 
@@ -125,7 +125,7 @@ average error in Conduc Bands: 0.357561 eV
 
 <div style="display: flex; justify-content: center;">
     <div class="image-container">
-        <img src="Si/compareDFT.png" alt="Image 2" width="90%" height="90%" style="border: 0;">
+        <img src="Si/compareDFT.png" alt="Image 2" width="90%" height="90%" style="border: 0; background: transparent;" allowtransparency="true">
     </div>
 </div>
 
@@ -159,7 +159,7 @@ my_CoBS.get_projectedBS({"Si":["s"]})
 
 <div style="display: flex; justify-content: center;">
     <div class="image-container" style="height: 500px; width: 500px;">
-        <iframe src="Si/projectedBS.html" style="width: 100%; height: 95%; border: 0;"></iframe>
+        <iframe src="Si/projectedBS.html" style="width: 100%; height: 95%; border: 0; background: transparent;" allowtransparency="true"></iframe>
     </div>
 </div>
 
@@ -184,7 +184,7 @@ my_CoBS.make_COHP_dashapp()
 
 <div style="display: flex; justify-content: center;">
     <div class="image-container" style="height: 500px; width: 500px;">
-        <iframe src="Si/COHP_BS.html" style="width: 100%; height: 95%; border: 0;"></iframe>
+        <iframe src="Si/COHP_BS.html" style="width: 100%; height: 95%; border: 0; background: transparent;" allowtransparency="true"></iframe>
     </div>
 </div>
 
@@ -240,10 +240,10 @@ my_CoUN.get_COHP(orbs_dict)
 
 <div style="display: flex; justify-content: center">
     <div class="image-container" style="height: 400px;">
-        <img src="Si/SiprojectedDOS.png" alt="Image 2" style="width: 90%; height: 95%; border: 0;">
+        <img src="Si/SiprojectedDOS.png" alt="Image 2" style="width: 90%; height: 95%; border: 0; background: transparent;" allowtransparency="true">
     </div>
     <div class="image-container" style="height: 400px;">
-        <img src="Si/COHP_DOS.png" alt="Image 2" style="width: 90%; height: 95%; border: 0;">
+        <img src="Si/COHP_DOS.png" alt="Image 2" style="width: 90%; height: 95%; border: 0; background: transparent;" allowtransparency="true">
     </div>
 </div>
 
@@ -271,6 +271,6 @@ my_CoUN.get_bonds_figure(energy_cutoff=0.05,bond_max=3)
 
 <div style="display: flex; justify-content: center;">
     <div class="image-container" style="height: 400px; width: 500px; background-color: transparent;">
-        <iframe src="Si/crystal_bonds.html" style="transform: scale(0.75) translate(-40px, -40px); transform-origin: top left; width: 150%; height: 150%; border: 0;"></iframe>
+        <iframe src="Si/crystal_bonds.html" style="transform: scale(0.75) translate(-40px, -40px); transform-origin: top left; width: 150%; height: 150%; border: 0; background: transparent;" allowtransparency="true"></iframe>
     </div>
 </div>

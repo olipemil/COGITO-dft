@@ -73,13 +73,13 @@ Click images for detailed tutorials or use the links below to jump directly to A
 <div style="display: flex; justify-content: space-around;">
     <div class="image-container" style="height: 300px;">
         <a href="tutorial.html#cohpbs">
-            <iframe src="Si/COHP_BS.html" style="transform: scale(0.5); transform-origin: top left; width: 200%; height: 200%; border: 0;" class="image-hover"></iframe>
+            <iframe src="Si/COHP_BS.html" style="transform: scale(0.5); transform-origin: top left; width: 200%; height: 200%; border: 0; background: transparent;" allowtransparency="true"" class="image-hover"></iframe>
             <div class="overlay-text">Plot projected COHP/COOP</div>
         </a>
     </div>
     <div class="image-container" style="height: 300px;">
         <a href="tutorial.html#projectbs">
-            <iframe src="Si/projectedBS.html" style="transform: scale(0.5); transform-origin: top left; width: 200%; height: 200%; border: 0;" class="image-hover"></iframe>
+            <iframe src="Si/projectedBS.html" style="transform: scale(0.5); transform-origin: top left; width: 200%; height: 200%; border: 0;  background: transparent;" allowtransparency="true"" class="image-hover"></iframe>
             <div class="overlay-text">Plot orbital projected<br>band structure</div>
         </a>
     </div>
@@ -100,7 +100,7 @@ Click images for detailed tutorials or use the links below to jump directly to A
     </div>
     <div class="image-container" style="width: 380px;">
         <a href="tutorial.html#use-cogito-to-plot-crystal-bonds">
-            <iframe src="Si/crystal_bonds.html" style="transform: scale(1.0); transform-origin: top left; width: 100%; height: 100%; border: 0;" class="image-hover"></iframe>
+            <iframe src="Si/crystal_bonds.html" style="transform: scale(1.0); transform-origin: top left; width: 100%; height: 100%; border: 0;  background: transparent;" allowtransparency="true"" class="image-hover"></iframe>
             <div class="overlay-text">Plot crytstal with COGITO bonds</div>
         </a>
     </div>
