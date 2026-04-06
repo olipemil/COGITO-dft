@@ -4,7 +4,7 @@
 
 Crystal Orbital Guided Iteration To atomic-Orbitals (COGITO) is a tool for obtaining quantum chemistry from plane wave DFT calculations. The code maps the plane wave basis to our COGITO basis. With this we can trace back which bonds are contributing to the independent particle energies. Leverging this, we can plot the crystal structure with their actual quantum chemical covalent bonds, determine origins of electronic structure, charge transfer, and more!
 
-Observe the bonding in the α-PbO structure by hovering over the bond lines. Solid lines indicate bonding while dashed lines indictate antibonding. The width of the line is proprotional to the magnitude of the bond energy.
+Observe the bonding in the α-PbO structure by hovering over the bond lines. Solid lines indicate bonding while dashed lines indicate antibonding. The width of the line is proportional to the magnitude of the bond energy.
 
 <div style="display: flex; justify-content: center;">
     <div class="image-container" style="height: 450px; width: 500px; background-color: transparent; overflow: hidden;">
@@ -29,7 +29,7 @@ Overview of installation and workflow. Short examples of key features.
 :link: file_struc
 :link-type: doc
 
-Compressive guide of inputs and outputs to COGITO modules.
+Comprehensive guide of inputs and outputs to COGITO modules.
 :::
 
 :::{grid-item-card} API
@@ -103,7 +103,7 @@ Click images for detailed tutorials or use the links below to jump directly to A
     <div class="image-container" style="width: 380px;">
         <a href="tutorial.html#use-cogito-to-plot-crystal-bonds">
             <iframe src="Si/crystal_bonds.html" style="transform: scale(1.0); transform-origin: top left; width: 100%; height: 100%; border: 0;" class="image-hover"></iframe>
-            <div class="overlay-text">Plot crytstal with COGITO bonds</div>
+            <div class="overlay-text">Plot crystal with COGITO bonds</div>
         </a>
     </div>
 </div>
