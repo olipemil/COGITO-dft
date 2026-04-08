@@ -89,7 +89,9 @@ COGITO reads the POSCAR, POTCAR, OUTCAR, vasprun.xml, and WAVECAR files from the
 For more on inputs and outputs of the main COGITO module, see  [COGITO files](file_struc.md#cogito).
 
 ```{tab} CLI
+~~~ bash
 COGITO --dir "Si/"
+~~~
 ```
 
 ```{tab} python
@@ -99,6 +101,7 @@ from COGITO_dft.COGITO import run_cogito
 direct = "Si/"
 run_cogito(directory=direct)
 ~~~
+```
 
 ## Run COGITO tight binding
 
