@@ -211,12 +211,12 @@ class COGITO(object):
             self.complete_dos = vasprun.complete_dos
             self.total_dos = vasprun.tdos
             #self.total_dos.densities
-            self.el_spd_dos = {}
-            self.spd_dos = {}
-            elements = {}
-            for atm in range(self.numAtoms):
-                self.el_spd_dos[self.elements[atm]] = self.complete_dos.get_element_spd_dos(el=self.elements[atm])
-            self.spd_dos = self.complete_dos.get_spd_dos()
+            #self.el_spd_dos = {}
+            #self.spd_dos = {}
+            #elements = {}
+            #for atm in range(self.numAtoms):
+            #    self.el_spd_dos[self.elements[atm]] = self.complete_dos.get_element_spd_dos(el=self.elements[atm])
+            #self.spd_dos = self.complete_dos.get_spd_dos()
             #self.pymatenergies = list(list(self.el_spd_dos.values())[0].values())[0].energies+energy_shift
             #print("dos info",list(self.el_spd_dos["Pb"].values())[0].densities[Spin.up])
             #print("dos info",list(self.el_spd_dos["S"].values())[0].densities[Spin.up])

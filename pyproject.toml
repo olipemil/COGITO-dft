@@ -13,15 +13,15 @@ dependencies = [
     "scipy>=1.15.0",
     "matplotlib",
     "plotly",
-    "pymatgen"
+    "pymatgen",
+    "seekpath==2.1.0"
 ]
 
 [project.optional-dependencies]
 plot = [
     "scikit-image",
     "dash",
-    "dash-ag-grid",
-    "seekpath==2.1.0"
+    "dash-ag-grid"
 ]
 
 [project.scripts]
