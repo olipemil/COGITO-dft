@@ -26,20 +26,30 @@ export OMP_NUM_THREADS=1
 
 ## Standard Workflow
 
-::::{grid} 4
+::::{grid} 1 1 4 4
 
 :::{grid-item-card} VASP 
 :link: tutorial.html#run-vasp
 :link-type: url
 
-Save wavefunctions from static calculation with high NBANDS. 
+Save WAVECAR from static run with high NBANDS. 
+:::
+
+:::{grid-item}
+:columns: 1
+<div style="display:flex; align-items:center; justify-content:center; height:100%; font-size:1.5em;">→</div>                                           
 :::
 
 :::{grid-item-card} COGITO 
 :link: tutorial.html#run-cogito
 :link-type: url
 
-Adapt the atomic basis and calculate the tight binding model. 
+Adapt the atomic basis and make tight binding model. 
+:::
+
+:::{grid-item}
+:columns: 1
+<div style="display:flex; align-items:center; justify-content:center; height:100%; font-size:1.5em;">→</div>  
 :::
 
 :::{grid-item-card} Quality analysis 
@@ -49,38 +59,19 @@ Adapt the atomic basis and calculate the tight binding model.
 Get guidance on if COGITO run was successful. 
 :::
 
+:::{grid-item}
+:columns: 1
+<div style="display:flex; align-items:center; justify-content:center; height:100%; font-size:1.5em;">→</div>  
+:::
+
 :::{grid-item-card} Chemistry analysis 
 :link: tutorial.html#run-band-structure-class
 :link-type: url
 
-Analyze integrated, bandstructure projected, or density of state projected COHP/COOP. 
+Analyze orbital, COHP, or COOP projected quantites.
 :::
 
 ::::
-
-```bash
-# Run VASP 
-vasp_std
-
-# See 'COGITO --help' for variable options
-COGITO --dir './'
-
-# Check that quality metrics are within range (check band interpolation after COGITOpost)
-COGITOanalyze --dir './'
-
-# Generate atom and bond partition of charge / band energies, make bond plots, and more
-COGITOpost --dir './'
-# Customize a runTBmodel.py file to get specific plots
-python runTBmodel.py
-```
-
-
-
-## Workflow
-
-<div class="image-container" style="justify-content: center; display: flex">
-	<iframe src="workflow_diagram.html" style="width: 100%; height: 420px;"></iframe>
-</div>
 
 ## Run VASP
 
@@ -94,53 +85,19 @@ A couple things to keep in mind for the VASP calculation:
 
 ## Run COGITO
 
-COGITO reads the INCAR, POSCAR, POTCAR, and WAVECAR files from the VASP calculation.
+COGITO reads the POSCAR, POTCAR, OUTCAR, vasprun.xml, and WAVECAR files from the VASP calculation.
+For more on inputs and outputs of the main COGITO module, see [COGITO files](file_struc.html#cogito).
 
-**Step 1: Install COGITO**<br>
-The COGITO code is not yet public, although it will be shortly. If you have access to the private repository, execute
-the code below to install COGITO and save its directly to the python path.
+```{tag} CLI
+COGITO --dir "Si/"
+```
 
-~~~ bash
-git clone https://github.com/olipemil/COGITO.git
-# copy COGITO to python path
-export PYTHONPATH="${PYTHONPATH}:/COGITO"
-~~~
-
-**Step 2: Setup python environment**<br>
-The following python packages can be pip installed:
-
-~~~ bash
-pip install pymatgen
-pip install matplotlib
-pip install numpy
-pip install scipy
-pip install lmfit
-pip install plotly
-pip install seekpath
-pip install dash
-~~~
-
-***OR***<br>
-For more reliable results, create a new conda environment for the yaml file in COGITO with conda
-
-~~~ bash
-conda env create -f COGITO_env.yml
-~~~
-
-**Step 3: Run COGITO!**<br>
-The code below generates the COGITO basis and saves the tight binding model parameters in three files which will be used to initialize the next step.<br>
-* tb_input.txt
-* TBparams.txt
-* overlaps.txt
-
+```{tag} python
 ~~~ python
-from COGITO import COGITO
+from COGITO_dft.COGITO import run_cogito
 
 direct = "Si/"
-# create an instance of the COGITO class
-COGITOmodel = COGITO(direct) # set "spin_polar = True" for magnetic calculations
-# do full algorithm and generate input files for TB model
-COGITOmodel.generate_TBmodel(verbose = 0, plot_orbs = True, plot_projBS = True)
+run_cogito(directory=direct)
 ~~~
 
 ## Run COGITO tight binding
