@@ -329,7 +329,7 @@ body[data-theme="dark"] .image-container {
 }
 
 .image-container iframe {
-  color-scheme: normal;
+  color-scheme: only light;
 }
 
 .image-hover {
