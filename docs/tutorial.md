@@ -28,7 +28,7 @@ export OMP_NUM_THREADS=1
 ::::{grid} 1 1 11 11
 
 :::{grid-item-card} VASP
-:class: col-2-5
+:class-item: col-2-5
 :link: tutorial.html#run-vasp
 :link-type: url
 
@@ -41,7 +41,7 @@ export OMP_NUM_THREADS=1
 :::
 
 :::{grid-item-card} COGITO
-:class: col-2-5
+:class-item: col-2-5
 :link: tutorial.html#run-cogito
 :link-type: url
 
@@ -54,7 +54,7 @@ export OMP_NUM_THREADS=1
 :::
 
 :::{grid-item-card} Quality analysis
-:class: col-2-5
+:class-item: col-2-5
 :link: tutorial.md#run-cogito-tight-binding
 :link-type: url
 
@@ -67,7 +67,7 @@ export OMP_NUM_THREADS=1
 :::
 
 :::{grid-item-card} Chemistry analysis
-:class: col-2-5
+:class-item: col-2-5
 :link: tutorial.html#run-band-structure-class
 :link-type: url
 
