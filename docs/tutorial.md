@@ -25,7 +25,7 @@ export OMP_NUM_THREADS=1
 
 ## Standard Workflow
 
-::::{grid} 1 1 6 6
+::::{grid} 1 1 5 5
 
 :::{grid-item-card} VASP 
 :link: tutorial.html#run-vasp
@@ -34,9 +34,10 @@ export OMP_NUM_THREADS=1
 <span style="font-size:0.6em;line-height:0.8">Save WAVECAR from static run with high NBANDS.</span>
 :::
 
-:::{grid-item}
-:columns: 1   
-<div style="display:flex; align-items:center; justify-content:center; height:100%; font-size:1.5em;">→</div>                                           
+:::{grid-item}                                                                                                               
+:class: p-0
+<div style="width: 30px; display:flex; align-items:center; justify-content:center; height:100%; font-size:1.5em;             
+flex-shrink:0;">→</div>                                                                                                      
 :::
 
 :::{grid-item-card} COGITO 
@@ -47,8 +48,9 @@ export OMP_NUM_THREADS=1
 :::
 
 :::{grid-item}
-:columns: 1      
-<div style="display:flex; align-items:center; justify-content:center; height:100%; font-size:1.5em;">→</div>  
+:class: p-0
+<div style="width: 30px; display:flex; align-items:center; justify-content:center; height:100%; font-size:1.5em;  
+flex-shrink:0;">→</div>                                                                                                        
 :::
 
 :::{grid-item-card} Quality analysis 
@@ -59,8 +61,9 @@ export OMP_NUM_THREADS=1
 :::
 
 :::{grid-item}
-:columns: 1   
-<div style="display:flex; align-items:center; justify-content:center; height:100%; font-size:1.5em;">→</div>  
+:class: p-0
+<div style="width: 30px; display:flex; align-items:center; justify-content:center; height:100%; font-size:1.5em;  
+flex-shrink:0;">→</div>                                                                                                        
 :::
 
 :::{grid-item-card} Chemistry analysis 
