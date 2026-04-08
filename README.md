@@ -44,14 +44,15 @@ export OMP_NUM_THREADS=1
 ```bash
 # run VASP 
 vasp_std
+
 # Check 'COGITO --help' to see variable options
 COGITO --dir './'
+
 # Checks that quality metrics are within range (run band error analysis after COGITOpost)
 COGITOanalyze --dir './'
 
-# Generate atom and bond partition of charge density / band energies, make bond plots, and more
+# Generate atom and bond partition of charge / band energies, make bond plots, and more
 COGITOpost --dir './'
-
 # Customize a runTBmodel.py file to get specific plots
 python runTBmodel.py
 ```
