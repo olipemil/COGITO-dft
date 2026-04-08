@@ -3,7 +3,7 @@
 [![Website](https://img.shields.io/badge/website-live-green?style=flat-square)](https://cogito-dft.readthedocs.io/)
 [![COGITO](https://img.shields.io/badge/main%20repo-COGITO-blue?style=flat-square)](https://github.com/olipemil/COGITO-dft)
 
-This repository hosts the code for COGITO, a tool for obtaining quantum chemistry from plane wave DFT calculations. The main codes files are COGITO.py, COGITOpost.py, COGITOanalyze.py, and COGITOico.py.
+This repository hosts the code for COGITO, a tool for obtaining quantum chemistry from plane wave DFT calculations. The main codes modules are COGITO, COGITOpost, COGITOanalyze, and COGITOico.
 
 ## Installation
 
@@ -12,7 +12,7 @@ pip install --upgrade pip
 pip install cogito-dft
 ```
 
-To install optional dependences (scikit-image, dash, dash-ag-grid) that are using in some COGITOpost functions
+To install optional dependences (scikit-image, dash, dash-ag-grid) that are used in some COGITOpost functions:
 
 ```bash
 pip install "cogito-dft[plot]"
