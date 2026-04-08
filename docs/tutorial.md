@@ -25,10 +25,10 @@ export OMP_NUM_THREADS=1
 
 ## Standard Workflow
 
-::::{grid} 1 1 11 11
+::::{grid} 1 1 20 20
 
 :::{grid-item-card} VASP
-:class-item: col-2-5
+:column: 4
 :link: tutorial.html#run-vasp
 :link-type: url
 
@@ -36,12 +36,12 @@ export OMP_NUM_THREADS=1
 :::
 
 :::{grid-item}
-:class: p-0 col-0-5
+:column: 1
 <div style="display:flex; align-items:center; justify-content:center; height:100%; font-size:1.5em;">→</div>
 :::
 
 :::{grid-item-card} COGITO
-:class-item: col-2-5
+:column: 4
 :link: tutorial.html#run-cogito
 :link-type: url
 
@@ -49,12 +49,12 @@ export OMP_NUM_THREADS=1
 :::
 
 :::{grid-item}
-:class: p-0 col-0-5
+:column: 1
 <div style="display:flex; align-items:center; justify-content:center; height:100%; font-size:1.5em;">→</div>
 :::
 
 :::{grid-item-card} Quality analysis
-:class-item: col-2-5
+:column: 4
 :link: tutorial.md#run-cogito-tight-binding
 :link-type: url
 
@@ -62,12 +62,12 @@ export OMP_NUM_THREADS=1
 :::
 
 :::{grid-item}
-:class: p-0 col-0-5
+:column: 1
 <div style="display:flex; align-items:center; justify-content:center; height:100%; font-size:1.5em;">→</div>
 :::
 
 :::{grid-item-card} Chemistry analysis
-:class-item: col-2-5
+:column: 4
 :link: tutorial.html#run-band-structure-class
 :link-type: url
 
