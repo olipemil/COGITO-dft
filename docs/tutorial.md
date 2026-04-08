@@ -37,6 +37,7 @@ Save WAVECAR from static run with high NBANDS.
 
 :::{grid-item}
 :columns: 1
+:class: p-0    
 <div style="display:flex; align-items:center; justify-content:center; height:100%; font-size:1.5em;">→</div>                                           
 :::
 
@@ -49,6 +50,7 @@ Adapt the atomic basis and make tight binding model.
 
 :::{grid-item}
 :columns: 1
+:class: p-0      
 <div style="display:flex; align-items:center; justify-content:center; height:100%; font-size:1.5em;">→</div>  
 :::
 
@@ -61,6 +63,7 @@ Get guidance on if COGITO run was successful.
 
 :::{grid-item}
 :columns: 1
+:class: p-0      
 <div style="display:flex; align-items:center; justify-content:center; height:100%; font-size:1.5em;">→</div>  
 :::
 
