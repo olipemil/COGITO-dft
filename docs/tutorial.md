@@ -35,9 +35,8 @@ export OMP_NUM_THREADS=1
 :::
 
 :::{grid-item}                                                                                                               
-:class: p-0
-<div style="width: 30px; display:flex; align-items:center; justify-content:center; height:100%; font-size:1.5em;             
-flex-shrink:0;">→</div>                                                                                                      
+:column: 0.5
+→                                                                                                     
 :::
 
 :::{grid-item-card} COGITO 
@@ -49,8 +48,7 @@ flex-shrink:0;">→</div>
 
 :::{grid-item}
 :class: p-0
-<div style="width: 30px; display:flex; align-items:center; justify-content:center; height:100%; font-size:1.5em;  
-flex-shrink:0;">→</div>                                                                                                        
+→                                                                                                       
 :::
 
 :::{grid-item-card} Quality analysis 
@@ -62,8 +60,7 @@ flex-shrink:0;">→</div>
 
 :::{grid-item}
 :class: p-0
-<div style="width: 30px; display:flex; align-items:center; justify-content:center; height:100%; font-size:1.5em;  
-flex-shrink:0;">→</div>                                                                                                        
+→                                                                                                      
 :::
 
 :::{grid-item-card} Chemistry analysis 
