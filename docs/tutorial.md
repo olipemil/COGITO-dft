@@ -31,7 +31,7 @@ export OMP_NUM_THREADS=1
 :link: tutorial.html#run-vasp
 :link-type: url
 
-Save WAVECAR from static run with high NBANDS. 
+<small>Save WAVECAR from static run with high NBANDS.</small>
 :::
 
 :::{grid-item}
@@ -44,7 +44,7 @@ Save WAVECAR from static run with high NBANDS.
 :link: tutorial.html#run-cogito
 :link-type: url
 
-Adapt the atomic basis and make tight binding model. 
+<small>Adapt the atomic basis and make tight binding model.</small>
 :::
 
 :::{grid-item}
@@ -57,7 +57,7 @@ Adapt the atomic basis and make tight binding model.
 :link: tutorial
 :link-type: doc
 
-Get guidance on if COGITO run was successful. 
+<small>Get guidance on if COGITO run was successful.</small>
 :::
 
 :::{grid-item}
@@ -70,7 +70,7 @@ Get guidance on if COGITO run was successful.
 :link: tutorial.html#run-band-structure-class
 :link-type: url
 
-Analyze orbital, COHP, or COOP projected quantites.
+<small>Analyze orbital, COHP, or COOP projected quantites.</small>
 :::
 
 ::::
