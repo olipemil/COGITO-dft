@@ -25,7 +25,7 @@ export OMP_NUM_THREADS=1
 
 ## Standard Workflow
 
-::::{grid} 1 1 5 5
+::::{grid} 1 1 6 6
 
 :::{grid-item-card} VASP 
 :link: tutorial.html#run-vasp
