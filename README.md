@@ -18,7 +18,7 @@ To install optional dependences (scikit-image, dash, dash-ag-grid) that are usin
 pip install "cogito-dft[plot]"
 ```
 
-To avoid thread oversubscription and possible stalls (**especially on HPC**), set:
+To avoid thread oversubscription and possible stalls **(especially on HPC)**, set:
 
 ```bash
 export OMP_NUM_THREADS=1
@@ -38,7 +38,7 @@ export OMP_NUM_THREADS=1
 
 1. **Run VASP** - Static calculation with saved wavefunctions and high NBANDS
 2. **Generate COGITO model** - Creates COGITO basis functions and tight binding parameters
-3. **Verify quality** - Check convergence, spill, and orbital mixing (analyze band interpolation after runTBmodel.py)
+3. **Verify quality** - Check convergence, charge spilling, orbital mixing, and band interpolation
 4. **Analyze chemistry** - COHP, bonding, charge analysis
 
 ```bash
@@ -48,7 +48,7 @@ vasp_std
 # Check 'COGITO --help' to see variable options
 COGITO --dir './'
 
-# Checks that quality metrics are within range (run band error analysis after COGITOpost)
+# Checks that quality metrics are within range (check band interpolation after COGITOpost)
 COGITOanalyze --dir './'
 
 # Generate atom and bond partition of charge / band energies, make bond plots, and more
