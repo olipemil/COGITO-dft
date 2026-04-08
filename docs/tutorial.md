@@ -28,21 +28,33 @@ export OMP_NUM_THREADS=1
 
 ::::{grid} 4
 
-:::{grid-item-card} VASP :link: tutorial.html#run-vasp
+:::{grid-item-card} VASP 
+:link: tutorial.html#run-vasp
+:link-type: doc
 
-Save wavefunctions from static calculation with high NBANDS. :::
+Save wavefunctions from static calculation with high NBANDS. 
+:::
 
-:::{grid-item-card} COGITO :link: tutorial.html#run-cogito
+:::{grid-item-card} COGITO 
+:link: tutorial.html#run-cogito
+:link-type: doc
 
-Adapt the atomic basis and calculate the tight binding model. :::
+Adapt the atomic basis and calculate the tight binding model. 
+:::
 
-:::{grid-item-card} Quality analysis :link: tutorial
+:::{grid-item-card} Quality analysis 
+:link: tutorial
+:link-type: doc
 
-Get guidance on if COGITO run was successful. :::
+Get guidance on if COGITO run was successful. 
+:::
 
-:::{grid-item-card} Chemistry analysis :link: tutorial.html#run-band-structure-class
+:::{grid-item-card} Chemistry analysis 
+:link: tutorial.html#run-band-structure-class
+:link-type: doc
 
-Analyze integrated, bandstructure projected, or density of state projected COHP/COOP. :::
+Analyze integrated, bandstructure projected, or density of state projected COHP/COOP. 
+:::
 
 ::::
 
