@@ -30,14 +30,14 @@ export OMP_NUM_THREADS=1
 
 :::{grid-item-card} VASP 
 :link: tutorial.html#run-vasp
-:link-type: doc
+:link-type: url
 
 Save wavefunctions from static calculation with high NBANDS. 
 :::
 
 :::{grid-item-card} COGITO 
 :link: tutorial.html#run-cogito
-:link-type: doc
+:link-type: url
 
 Adapt the atomic basis and calculate the tight binding model. 
 :::
@@ -51,7 +51,7 @@ Get guidance on if COGITO run was successful.
 
 :::{grid-item-card} Chemistry analysis 
 :link: tutorial.html#run-band-structure-class
-:link-type: doc
+:link-type: url
 
 Analyze integrated, bandstructure projected, or density of state projected COHP/COOP. 
 :::
