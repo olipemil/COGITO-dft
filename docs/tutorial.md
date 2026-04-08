@@ -86,7 +86,7 @@ A couple things to keep in mind for the VASP calculation:
 ## Run COGITO
 
 COGITO reads the POSCAR, POTCAR, OUTCAR, vasprun.xml, and WAVECAR files from the VASP calculation.
-For more on inputs and outputs of the main COGITO module, see {ref}`COGITO files<file_struc:cogito>`.
+For more on inputs and outputs of the main COGITO module, see  [COGITO files](file_struc.md#cogito).
 
 ```{tab} CLI
 COGITO --dir "Si/"
