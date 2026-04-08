@@ -25,10 +25,10 @@ export OMP_NUM_THREADS=1
 
 ## Standard Workflow
 
-::::{grid} 1 1 20 20
+::::{grid} 1 1 12 12
 
 :::{grid-item-card} VASP
-:column: 4
+:column: 2
 :link: tutorial.html#run-vasp
 :link-type: url
 
@@ -41,7 +41,7 @@ export OMP_NUM_THREADS=1
 :::
 
 :::{grid-item-card} COGITO
-:column: 4
+:column: 2
 :link: tutorial.html#run-cogito
 :link-type: url
 
@@ -54,7 +54,7 @@ export OMP_NUM_THREADS=1
 :::
 
 :::{grid-item-card} Quality analysis
-:column: 4
+:column: 2
 :link: tutorial.md#run-cogito-tight-binding
 :link-type: url
 
@@ -67,7 +67,7 @@ export OMP_NUM_THREADS=1
 :::
 
 :::{grid-item-card} Chemistry analysis
-:column: 4
+:column: 2
 :link: tutorial.html#run-band-structure-class
 :link-type: url
 
