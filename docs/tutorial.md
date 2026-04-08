@@ -3,6 +3,67 @@
 These tutorials cover installing the COGITO code, running the main COGITO code, and analyzing bonding with
 the COGITO tight binding model. The workflow below provides the general outline. Click the section labels to quickly get to each section.
 
+
+## Installation
+
+```bash
+pip install --upgrade pip
+pip install cogito-dft
+```
+
+To install optional dependences (scikit-image, dash, dash-ag-grid) that are used in some COGITOpost functions:
+
+```bash
+pip install "cogito-dft[plot]"
+```
+
+To avoid thread oversubscription and possible stalls **(especially on HPC)**, set:
+
+```bash
+export OMP_NUM_THREADS=1
+```
+
+
+## Standard Workflow
+
+::::{grid} 4
+
+:::{grid-item-card} VASP :link: tutorial.html#run-vasp
+
+Save wavefunctions from static calculation with high NBANDS. :::
+
+:::{grid-item-card} COGITO :link: tutorial.html#run-cogito
+
+Adapt the atomic basis and calculate the tight binding model. :::
+
+:::{grid-item-card} Quality analysis :link: tutorial
+
+Get guidance on if COGITO run was successful. :::
+
+:::{grid-item-card} Chemistry analysis :link: tutorial.html#run-band-structure-class
+
+Analyze integrated, bandstructure projected, or density of state projected COHP/COOP. :::
+
+::::
+
+```bash
+# Run VASP 
+vasp_std
+
+# See 'COGITO --help' for variable options
+COGITO --dir './'
+
+# Check that quality metrics are within range (check band interpolation after COGITOpost)
+COGITOanalyze --dir './'
+
+# Generate atom and bond partition of charge / band energies, make bond plots, and more
+COGITOpost --dir './'
+# Customize a runTBmodel.py file to get specific plots
+python runTBmodel.py
+```
+
+
+
 ## Workflow
 
 <div class="image-container" style="justify-content: center; display: flex">
