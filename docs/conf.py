@@ -45,6 +45,7 @@ autodoc_default_options = {
 autodoc_member_order = "bysource"
 
 myst_enable_extensions = ["colon_fence", "attrs_inline"]
+myst_heading_anchors = 3
 
 source_suffix = {".rst": "restructuredtext", ".md": "markdown"}
 master_doc = "index"
