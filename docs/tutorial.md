@@ -23,10 +23,9 @@ To avoid thread oversubscription and possible stalls **(especially on HPC)**, se
 export OMP_NUM_THREADS=1
 ```
 
-
 ## Standard Workflow
 
-::::{grid} 1 1 4 4
+::::{grid} 1 1 5 5
 
 :::{grid-item-card} VASP 
 :link: tutorial.html#run-vasp
@@ -91,7 +90,7 @@ A couple things to keep in mind for the VASP calculation:
 COGITO reads the POSCAR, POTCAR, OUTCAR, vasprun.xml, and WAVECAR files from the VASP calculation.
 For more on inputs and outputs of the main COGITO module, see  [COGITO files](file_struc.md#cogito).
 
-```{tab} CLI
+```{tab} bash
 ~~~ bash
 COGITO --dir "Si/"
 ~~~
