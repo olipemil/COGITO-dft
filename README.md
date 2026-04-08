@@ -42,13 +42,13 @@ export OMP_NUM_THREADS=1
 4. **Analyze chemistry** - COHP, bonding, charge analysis
 
 ```bash
-# run VASP 
+# Run VASP 
 vasp_std
 
-# Check 'COGITO --help' to see variable options
+# See 'COGITO --help' for variable options
 COGITO --dir './'
 
-# Checks that quality metrics are within range (check band interpolation after COGITOpost)
+# Check that quality metrics are within range (check band interpolation after COGITOpost)
 COGITOanalyze --dir './'
 
 # Generate atom and bond partition of charge / band energies, make bond plots, and more
