@@ -25,49 +25,53 @@ export OMP_NUM_THREADS=1
 
 ## Standard Workflow
 
-::::{grid} 1 1 5 5
+::::{grid} 1 1 11 11
 
-:::{grid-item-card} VASP 
+:::{grid-item-card} VASP
+:class: col-2-5
 :link: tutorial.html#run-vasp
 :link-type: url
 
-<span style="font-size:0.6em;line-height:0.8">Save WAVECAR from static run with high NBANDS.</span>
+<span style="font-size:0.8em;">Save WAVECAR from static run with high NBANDS.</span>
 :::
 
-:::{grid-item}                                                                                                               
-:column: 0.5
-→                                                                                                     
+:::{grid-item}
+:class: p-0 col-0-5
+<div style="display:flex; align-items:center; justify-content:center; height:100%; font-size:1.5em;">→</div>
 :::
 
-:::{grid-item-card} COGITO 
+:::{grid-item-card} COGITO
+:class: col-2-5
 :link: tutorial.html#run-cogito
 :link-type: url
 
-<span style="font-size:0.6em;line-height:0.8">Adapt the atomic basis and make tight binding model.</span>
+<span style="font-size:0.8em;">Adapt the atomic basis and make tight binding model.</span>
 :::
 
 :::{grid-item}
-:class: p-0
-→                                                                                                       
+:class: p-0 col-0-5
+<div style="display:flex; align-items:center; justify-content:center; height:100%; font-size:1.5em;">→</div>
 :::
 
-:::{grid-item-card} Quality analysis 
-:link: tutorial
-:link-type: doc
+:::{grid-item-card} Quality analysis
+:class: col-2-5
+:link: tutorial.md#run-cogito-tight-binding
+:link-type: url
 
-<span style="font-size:0.6em;line-height:0.8">Get guidance on if COGITO run was successful.</span>
+<span style="font-size:0.8em;">Get guidance on if COGITO run was successful.</span>
 :::
 
 :::{grid-item}
-:class: p-0
-→                                                                                                      
+:class: p-0 col-0-5
+<div style="display:flex; align-items:center; justify-content:center; height:100%; font-size:1.5em;">→</div>
 :::
 
-:::{grid-item-card} Chemistry analysis 
+:::{grid-item-card} Chemistry analysis
+:class: col-2-5
 :link: tutorial.html#run-band-structure-class
 :link-type: url
 
-<span style="font-size:0.6em;line-height:0.8">Analyze orbital, COHP, or COOP projected quantites.</span>
+<span style="font-size:0.8em;">Analyze orbital, COHP, or COOP projected quantites.</span>
 :::
 
 ::::
