@@ -25,7 +25,7 @@ export OMP_NUM_THREADS=1
 
 ## Standard Workflow
 
-::::{grid} 2 6 6 6
+::::{grid} 1 3 6 6
 :gutter: 0 
 
 :::{grid-item-card} VASP
@@ -150,11 +150,11 @@ run_cogito_model(directory=direct)
 ~~~
 ```
 
-The general can be broken into 4 parts: **(1)** Analysis of overlap and TB parameters, **(2)** Analysis of band error, **(3)** Generation of atom and bond data, and **(4)** Generation of the crystal bonds and/or combined bond and COHP projected density of states plots.
+This general analysis can be broken into 4 parts: **1)** Create class and plot decay of overlap/TB parameters, **2)** Check band interpolation error compared to DFT, **3)** Generation of atom and bond data, and **4)** Generation of the crystal bonds and/or combined bond and COHP projected density of states plots.
 
 For discussion, here is how you could run them individually.
 
-### 1) Create COGITO TB model class object and check decay
+### 1) Create COGITO TB class object and check decay
 
 Now we can work with our COGITO tight binding model. The first step is to verify the quality of the COGITO TB model.
 
@@ -188,9 +188,9 @@ Note: The overlap and hopping plots should show a rough linear decay
     </div>
 </div>
 
-### 2) Compare COGITO band energies to DFT band energies
+### 2) Compare COGITO band energies to DFT
 
-To verify the band interpolation of COGITO, the function 'compare_to_DFT' is used to determine the error between the interpolating COITO band energies and DFT band energies. This function reads the DFT energies from an EIGENVAL file from a VASP (band structure) calculation.
+To verify the band interpolation of COGITO, the function 'compare_to_DFT' is used to determine the error between the interpolating COITO band energies and DFT band energies. The DFT energies are read from an EIGENVAL file from a VASP (band structure) calculation.
 
 ```{tab} bash (CLI)
 ~~~ bash
@@ -223,6 +223,54 @@ average error in Conduc Bands: 0.357561 eV
         <img src="Si/compareDFT.png" alt="Image 2" width="90%" height="90%" style="border: 0; background: transparent;" allowtransparency="true">
     </div>
 </div>
+
+### 3) Generate atom and bond data
+
+Create a uniform class object from the TB_Model class object. Then generate the json atom and bond data. These json files include every integrated quantity you may want to analyze! (Band structure or DOS analysis requires more effort.) 
+
+```{tab} python
+~~~ python
+# now do the uniform stuff
+from COGITO_dft.COGITOpost import COGITO_UNIFORM as CoUN
+import numpy as np
+
+density = 1.0 # increase for better DOS plots
+new_grid = np.array(np.around(np.array(COGITOTB.num_trans) * densify, decimals=0),dtype=int)
+
+my_CoUN = CoUN(COGITOTB, grid=new_grid) # create uniform class
+my_CoUN.jsonify_bonddata()
+~~~
+```
+
+### 4) Create interactive visualization of quantum bonds!
+
+The accurate TB model from COGITO allows for calculation of COHP energies which accurately reflect the DFT energies.
+This can be used to confidently and precisely trace back the crystal covalent bonding!
+
+~~~ python
+# plot the crystal structure with real bonds!
+# if a bond energy magnitude is > energy_cutoff it will be plotted
+# if the bond length is > bond_max it will not be plotted if an atom is outside the primitive cell
+my_CoUN.get_bonds_figure(energy_cutoff=0.05,bond_max=3)
+~~~
+
+<div style="display: flex; justify-content: center;">
+    <div class="image-container" style="height: 400px; width: 500px; background-color: transparent;">
+        <iframe src="Si/crystal_bonds.html" style="transform: scale(0.75) translate(-40px, -40px); transform-origin: top left; width: 150%; height: 150%; border: 0;"></iframe>
+    </div>
+</div>
+
+~~~ python
+# plot the crystal bonds plot with an interative projected COHP!
+my_CoUN.get_bonds_figure(energy_cutoff=0.05,bond_max=3)
+~~~
+
+<div style="display: flex; justify-content: center;">
+    <div class="image-container" style="height: 400px; width: 500px; background-color: transparent;">
+        <iframe src="PbO/bond_cohp_plot.html" style="transform: scale(0.75) translate(-40px, -40px); transform-origin: top left; width: 150%; height: 150%; border: 0;"></iframe>
+    </div>
+</div>
+
 
 ## Run band structure class
 
@@ -342,30 +390,4 @@ my_CoUN.get_COHP(orbs_dict)
     </div>
 </div>
 
-### Use COGITO to plot crystal bonds!
 
-The accurate TB model from COGITO allows for calculation of COHP energies which almost perfectly reflect the true DFT values.
-This can be used to confidently and precisely trace back the crystal covalent bonding!
-
-~~~ python
-# must create TB class instance first
-from COGITOpost import COGITO_TB_Model as CoTB
-direct = "Si/"
-my_CoTB = CoTB(direct) # create TB class from a directory that has run COGITO
-my_CoTB.restrict_params(maximum_dist=15, minimum_value=0.00001) # restrict the TB parameters to improve speed
-
-# now create band structure
-from COGITOpost import COGITO_UNIFORM as CoUN
-my_CoUN = CoUN(COGITOTB,grid=(10,10,10))
-
-# plot the crystal structure with real bonds!
-# if a bond energy magnitude is > energy_cutoff it will be plotted
-# if the bond length is > bond_max it will not be plotted if an atom is outside the primitive cell
-my_CoUN.get_bonds_figure(energy_cutoff=0.05,bond_max=3)
-~~~
-
-<div style="display: flex; justify-content: center;">
-    <div class="image-container" style="height: 400px; width: 500px; background-color: transparent;">
-        <iframe src="Si/crystal_bonds.html" style="transform: scale(0.75) translate(-40px, -40px); transform-origin: top left; width: 150%; height: 150%; border: 0;"></iframe>
-    </div>
-</div>
