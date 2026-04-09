@@ -35,13 +35,6 @@ export OMP_NUM_THREADS=1
 <span style="font-size:0.8em;">Save WAVECAR from static run with high NBANDS.</span>
 :::
 
-<!--
-:::{grid-item}
-:columns: 0
-<div style="display:flex; align-items:center; justify-content:center; height:100%; font-size:1.5em;">→</div>
-:::
--->
-
 :::{grid-item-card} COGITO
 :columns: 3
 :link: tutorial.html#run-cogito
@@ -49,13 +42,6 @@ export OMP_NUM_THREADS=1
 
 <span style="font-size:0.8em;">Adapt the atomic basis and make tight binding model.</span>
 :::
-
-<!--
-:::{grid-item}
-:columns: 0
-<div style="display:flex; align-items:center; justify-content:center; height:100%; font-size:1.5em;">→</div>
-:::
--->
 
 :::{grid-item-card} Quality analysis
 :columns: 3
@@ -65,12 +51,6 @@ export OMP_NUM_THREADS=1
 <span style="font-size:0.8em;">Get guidance on if COGITO run was successful.</span>
 :::
 
-<!--
-:::{grid-item}
-:columns: 0
-<div style="display:flex; align-items:center; justify-content:center; height:100%; font-size:1.5em;">→</div>
-:::
--->
 :::{grid-item-card} Chemistry analysis
 :columns: 3
 :link: tutorial.html#run-band-structure-class
