@@ -55,7 +55,7 @@ export OMP_NUM_THREADS=1
 :::
 
 :::{grid-item-card} Check quality
-:link: tutorial.md#run-cogito-tight-binding
+:link: tutorial.html#analyze-quality-of-cogito-run
 :link-type: url
 :text-align: center
 :class-body: d-flex align-items-center justify-content-center
@@ -112,7 +112,7 @@ run_cogito(directory=direct)
 
 ## Analyze quality of COGITO run
 
-Checkes if quality output files are within expected range. If not, suggests tag changes that could improve quality. For more details, see [COGITOanalyze files](file_struc.md#cogitoanalyze).
+Checkes if quality output files are within expected range. If not, suggests tag changes that could improve quality. Run after COGITOpost for feedback on band interpolation quality. For more details, see [COGITOanalyze files](file_struc.md#cogitoanalyze).
 
 ```{tab} bash (CLI)
 ~~~ bash
@@ -129,13 +129,11 @@ analyze_all(dir=direct)
 ~~~
 ```
 
-## Analyze COGITO model
+## Study COGITO model
 
-Analyze orbital, COHP, or COOP projected quantites.
+Obtain orbital, COHP, and/or COOP projected quantites.
 
-To run the general model analysis, do below. The general model can be broken into analysis of overlap and TB parameters, analysis of band error, generation of atom and bond data, generation of the crystal bonds plot, and/or generation of the combined bond and COHP projected density of states plot. 
-
-All of these can be achieved by running:
+To run the general model analysis:
 
 ```{tab} bash (CLI)
 ~~~ bash
@@ -152,9 +150,11 @@ run_cogito_model(directory=direct)
 ~~~
 ```
 
+The general can be broken into 4 parts: **(1)** Analysis of overlap and TB parameters, **(2)** Analysis of band error, **(3)** Generation of atom and bond data, and **(4)** Generation of the crystal bonds and/or combined bond and COHP projected density of states plots.
+
 For discussion, here is how you could run them individually.
 
-### Create COGITO TB model class object and check decay
+### 1) Create COGITO TB model class object and check decay
 
 Now we can work with our COGITO tight binding model. The first step is to verify the quality of the COGITO TB model.
 
@@ -188,7 +188,7 @@ Note: The overlap and hopping plots should show a rough linear decay
     </div>
 </div>
 
-###Compare COGITO band energies to DFT band energies
+### 2) Compare COGITO band energies to DFT band energies
 
 To verify the band interpolation of COGITO, the function 'compare_to_DFT' is used to determine the error between the interpolating COITO band energies and DFT band energies. This function reads the DFT energies from an EIGENVAL file from a VASP (band structure) calculation.
 
