@@ -232,8 +232,10 @@ average error in Conduc Bands: 0.357561 eV
 </div>
 
 ### 3) Generate atom and bond data
+ 
+By paritioning integrated values (like charge and band energy) into atom and bond contributions, we generate three json data files. These json files contain almost everything you may want to analyze! (Band structure or DOS analysis requires more effort.) 
 
-Create a uniform class object from the TB_Model class object. The uniform class uses a dense grid of k-points for integrated values or for density of states analysis. By paritioning integrated values (like charge and band energy) into atom and bond contributions, we generate three json data files. These json files contain almost everything you may want to analyze! (Band structure or DOS analysis requires more effort.) In the future, I will develop a more thorough tutorial of these files with examples of how to use them, but for now reference [COGITOpost files](file_struc.md#cogitopost), examine the files yourself, and email me (Emily) with any questions.
+In the future, I will develop a more thorough tutorial of these files with examples of how to use them, but for now reference [COGITOpost files](file_struc.md#cogitopost), examine the files yourself, and email me (Emily) with any questions.
 
 ```{tab} bash (CLI)
 ~~~ bash
@@ -243,7 +245,7 @@ COGITOpost --dir "Si/" --densify 1.0  --no_save_quality_info --no_save_crystal_b
 
 ```{tab} python
 ~~~ python
-# now do the uniform stuff
+# first, make an object of the uniform class
 from COGITO_dft.COGITOpost import COGITO_UNIFORM as CoUN
 import numpy as np
 
