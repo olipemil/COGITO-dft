@@ -57,13 +57,13 @@ Click images for detailed tutorials or use the links below to jump directly to A
 
 <div style="display: flex; justify-content: space-around;">
     <div class="image-container" style="height: 100%;">
-        <a href="tutorial.html#comparedft">
+        <a href="tutorial.html#compare-cogito-band-energies-to-dft">
             <img src="Si/compareDFT.png" alt="Image 2" width="98%" height="100%" class="image-hover">
             <div class="overlay-text">Compare COGITO bands<br>to VASP</div>
         </a>
     </div>
     <div class="image-container" style="height: 100%;">
-        <a href="tutorial.html#tight">
+        <a href="tutorial.html#create-cogito-tb-class-object-and-check-decay">
             <img src="Si/tbparams_decay.png" alt="Image 2" width="98%" height="100%" class="image-hover">
             <div class="overlay-text">Plot parameter decay</div>
         </a>
@@ -91,17 +91,19 @@ Click images for detailed tutorials or use the links below to jump directly to A
 
 <div style="display: flex; justify-content: space-around">
     <div class="image-container" style="width: 200px;">
-        <a href="tutorial.html#projectdos">
+        <a href="tutorial.html#orbital-cohp-or-coop-projected-dos">
             <img src="Si/SiprojectedDOS.png" alt="Image 2" style="width: 100%; height: 100%; border: 0;" class="image-hover">
             <div class="overlay-text">Plot orbital<br>projected DOS</div>
         </a>
     </div>
     <div class="image-container" style="width: 170px;">
-        <img src="Si/COHP_DOS.png" alt="Image 2" style="width: 100%; height: 100%; border: 0;" class="image-hover">
-        <div class="overlay-text" style="justify-content: center">Plot COHP/COOP energy density</div>
+        <a href="tutorial.html#orbital-cohp-or-coop-projected-dos">
+        	<img src="Si/COHP_DOS.png" alt="Image 2" style="width: 100%; height: 100%; border: 0;" class="image-hover">
+        	<div class="overlay-text" style="justify-content: center">Plot COHP/COOP energy density</div>
+    	</a>
     </div>
     <div class="image-container" style="width: 380px;">
-        <a href="tutorial.html#use-cogito-to-plot-crystal-bonds">
+        <a href="tutorial.html#create-interactive-visualization-of-quantum-bonds">
             <iframe src="Si/crystal_bonds.html" style="transform: scale(1.0); transform-origin: top left; width: 100%; height: 100%; border: 0;" class="image-hover"></iframe>
             <div class="overlay-text">Plot crystal with COGITO bonds</div>
         </a>
