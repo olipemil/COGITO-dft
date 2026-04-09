@@ -25,47 +25,52 @@ export OMP_NUM_THREADS=1
 
 ## Standard Workflow
 
-::::{grid} 1 1 12 12
+::::{grid} 4
 
 :::{grid-item-card} VASP
-:columns: 2
+:columns: 3
 :link: tutorial.html#run-vasp
 :link-type: url
 
 <span style="font-size:0.8em;">Save WAVECAR from static run with high NBANDS.</span>
 :::
 
+<!--
 :::{grid-item}
 :columns: 0
 <div style="display:flex; align-items:center; justify-content:center; height:100%; font-size:1.5em;">→</div>
 :::
+-->
 
 :::{grid-item-card} COGITO
-:columns: 2
+:columns: 3
 :link: tutorial.html#run-cogito
 :link-type: url
 
 <span style="font-size:0.8em;">Adapt the atomic basis and make tight binding model.</span>
 :::
 
+<!--
 :::{grid-item}
 :columns: 0
 <div style="display:flex; align-items:center; justify-content:center; height:100%; font-size:1.5em;">→</div>
 :::
+-->
 
 :::{grid-item-card} Quality analysis
-:columns: 2
+:columns: 3
 :link: tutorial.md#run-cogito-tight-binding
 :link-type: url
 
 <span style="font-size:0.8em;">Get guidance on if COGITO run was successful.</span>
 :::
 
+<!--
 :::{grid-item}
 :columns: 0
 <div style="display:flex; align-items:center; justify-content:center; height:100%; font-size:1.5em;">→</div>
 :::
-
+-->
 :::{grid-item-card} Chemistry analysis
 :columns: 3
 :link: tutorial.html#run-band-structure-class
