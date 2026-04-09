@@ -137,8 +137,6 @@ analyze_all(dir=direct)
 
 ## Study COGITO model
 
-Obtain orbital, COHP, and/or COOP projected quantites.
-
 To run the general model analysis:
 
 ```{tab} bash (CLI)
@@ -156,10 +154,12 @@ run_cogito_model(directory=direct)
 ~~~
 ```
 
-This general analysis can be broken into 4 parts: **1)** Create class and plot decay of overlap/TB parameters, **2)** Check band interpolation error compared to DFT, **3)** Generation of atom and bond data, and **4)** Generation of the crystal bonds and/or combined bond and COHP projected density of states plots.
+This general analysis can be broken into 4 parts: **1)** Create class and plot decay of overlap/TB parameters, **2)** Check band interpolation error compared to DFT, **3)** Generate integrated atom and bond projected data, and **4)** Generate the crystal bonds and/or combined bond and COHP projected density of states plots.
 
-These can be customized with tag in command line interface or run in python individually. 
-For more a detailed analysis on density of states (uniform k-grid) or band structue, see [below](tutorial.md#additional-analysis), explore [COGITOpost files](file_struc.md#cogitopost), or use the API/source code.
+For a better understanding of the structure of the data, review Section VI of the [COGITO manuscript](https://arxiv.org/pdf/2511.19725).
+
+These 4 parts can be customized with tags in command line interface or run in python individually, as reviewed below. 
+For more a detailed analysis on density of states (uniform k-grid) or band structue, see [below](tutorial.md#additional-analysis), explore [COGITOpost files](file_struc.md#cogitopost), or reference the API/source code.
 
 ### 1) Create COGITO TB class object and check decay
 
