@@ -245,7 +245,7 @@ my_CoUN.jsonify_bonddata()
 ### 4) Create interactive visualization of quantum bonds!
 
 The accurate TB model from COGITO allows for calculation of COHP energies which accurately reflect the DFT energies.
-This can be used to confidently and precisely trace back the crystal covalent bonding!
+This can be used to confidently and precisely trace back the crystal covalent bonding.
 
 ~~~ python
 # plot the crystal structure with real bonds!
