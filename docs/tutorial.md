@@ -30,6 +30,7 @@ export OMP_NUM_THREADS=1
 ```
 
 <br>
+
 ## Standard Workflow
 
 ::::{grid} 1 3 6 6
@@ -86,6 +87,7 @@ export OMP_NUM_THREADS=1
 ::::
 
 <br>
+
 ## Run VASP
 
 A couple things to keep in mind for the VASP calculation:
@@ -97,6 +99,7 @@ A couple things to keep in mind for the VASP calculation:
 * No spin-orbit coupling (LSORBIT=False, but magnetism is supported (ISPIN=2)
 
 <br>
+
 ## Run COGITO
 
 Execute the main COGITO code that adapts the atomic orbital basis and calculates the corresponding Hamiltonian matrix.
@@ -120,6 +123,7 @@ run_cogito(directory=direct)
 ```
 
 <br>
+
 ## Analyze quality of COGITO run
 
 Checkes if quality output files are within expected range. If not, suggests tag changes that could improve quality. Run after COGITOpost for feedback on band interpolation quality. For more details, see [COGITOanalyze files](file_struc.md#cogitoanalyze).
@@ -140,6 +144,7 @@ analyze_all(dir=direct)
 ```
 
 <br>
+
 ## Study COGITO model
 
 To run the general model analysis:
@@ -167,6 +172,7 @@ These 4 parts can be customized with tags in command line interface or run in py
 For more a detailed analysis on density of states (uniform k-grid) or band structue, see [below](tutorial.md#additional-analysis), explore [COGITOpost files](file_struc.md#cogitopost), or reference the API/source code.
 
 <br>
+
 ### 1) Create COGITO TB class object and check decay
 
 Now we can work with our COGITO tight binding model. The first step is to verify the quality of the COGITO TB model.
@@ -202,6 +208,7 @@ Note: The overlap and hopping plots should show a rough linear decay
 </div>
 
 <br>
+
 ### 2) Compare COGITO band energies to DFT
 
 To verify the band interpolation of COGITO, the function 'compare_to_DFT' is used to determine the error between the interpolating COITO band energies and DFT band energies. The DFT energies are read from an EIGENVAL file from a VASP (band structure) calculation.
@@ -239,6 +246,7 @@ average error in Conduc Bands: 0.357561 eV
 </div>
 
 <br>
+
 ### 3) Generate atom and bond data
  
 By paritioning integrated values (like charge and band energy) into atom and bond contributions, we generate three json data files. These json files contain almost everything you may want to analyze! (Band structure or DOS analysis requires more effort.) 
@@ -268,6 +276,7 @@ my_CoUN.jsonify_bonddata(minimum_cohp=min_cohp)
 ```
 
 <br>
+
 ### 4) Create interactive visualization of quantum bonds!
 
 The accurate TB model from COGITO allows for calculation of COHP energies which accurately reflect the DFT energies.
@@ -315,6 +324,7 @@ my_CoUN.get_crystal_plus_COHP(energy_cutoff=0.05, bond_max=3, auto_label="full")
 </div>
 
 <br>
+
 ## Additional Analysis
 
 ### Orbital, COHP, or COOP projected DOS
