@@ -25,14 +25,14 @@ export OMP_NUM_THREADS=1
 
 ## Standard Workflow
 
-::::{grid} 2 2 12 12
+::::{grid} 1 1 6 6
 :gutter: 0 
 
 :::{grid-item-card} VASP
-:columns: 2
 :link: tutorial.html#run-vasp
 :link-type: url
 :text-align: center
+:class-body: d-flex align-items-center justify-content-center
 <!--<span style="font-size:0.8em;">Save WAVECAR from static run with high NBANDS.</span>-->
 :::
 
@@ -42,10 +42,10 @@ export OMP_NUM_THREADS=1
 :::
 
 :::{grid-item-card} COGITO
-:columns: 2
 :link: tutorial.html#run-cogito
 :link-type: url
 :text-align: center
+:class-body: d-flex align-items-center justify-content-center
 <!--<span style="font-size:0.8em;">Adapt the atomic basis and make tight binding model.</span>-->
 :::
 
@@ -55,10 +55,10 @@ export OMP_NUM_THREADS=1
 :::
 
 :::{grid-item-card} Check quality
-:columns: 2
 :link: tutorial.md#run-cogito-tight-binding
 :link-type: url
 :text-align: center
+:class-body: d-flex align-items-center justify-content-center
 <!--<span style="font-size:0.8em;">Get guidance on if COGITO run was successful.</span>-->
 :::
 
@@ -72,6 +72,7 @@ export OMP_NUM_THREADS=1
 :link: tutorial.html#run-band-structure-class
 :link-type: url
 :text-align: center
+:class-body: d-flex align-items-center justify-content-center
 <!--<span style="font-size:0.8em;">Analyze orbital, COHP, or COOP projected quantites.</span>-->
 :::
 
@@ -88,6 +89,8 @@ A couple things to keep in mind for the VASP calculation:
 * No spin-orbit coupling (LSORBIT=False, but magnetism is supported (ISPIN=2)
 
 ## Run COGITO
+
+Execute the main COGITO code that adapts the atomic orbital basis and calculates the corresponding Hamiltonian matrix.
 
 COGITO reads the POSCAR, POTCAR, OUTCAR, vasprun.xml, and WAVECAR files from the VASP calculation.
 For more on inputs and outputs of the main COGITO module, see [COGITO files](file_struc.md#cogito).
@@ -126,19 +129,45 @@ analyze_all(dir=direct)
 ~~~
 ```
 
-## Run COGITO tight binding
+## Analyze COGITO model
+
+Analyze orbital, COHP, or COOP projected quantites.
+
+To run the general model analysis, do below. The general model can be broken into analysis of overlap and TB parameters, analysis of band error, generation of atom and bond data, generation of the crystal bonds plot, and/or generation of the combined bond and COHP projected density of states plot. 
+
+All of these can be achieved by running:
+
+```{tab} bash (CLI)
+~~~ bash
+COGITOpost --dir "Si/"
+~~~
+```
+
+```{tab} python
+~~~ python
+from COGITO_dft.COGITOpost import run_cogito_model
+
+direct = "Si/"
+run_cogito_model(directory=direct)
+~~~
+```
+
+For discussion, here is how you could run them individually.
+
+### Create COGITO TB model class object and check decay
 
 Now we can work with our COGITO tight binding model. The first step is to verify the quality of the COGITO TB model.
 
-<span id="tight"></span>**Create the tight binding class**<br>
+```{tab} python
 This code will need to be run before any use of the bandstructure or uniform classes.<br>
 
 ~~~ python
-from COGITOpost import COGITO_TB_Model as CoTB
+from COGITO_dft.COGITOpost import COGITO_TB_Model as CoTB
 
 direct = "Si/"
 # create TB class from a directory that has run COGITO
 my_CoTB = CoTB(direct)
+my_CoTB.normalize_params() # for precise normalization
 # optionally, restrict the TB parameters to improve speed
 my_CoTB.restrict_params(maximum_dist=15, minimum_value=0.00001)
 
@@ -146,6 +175,7 @@ my_CoTB.restrict_params(maximum_dist=15, minimum_value=0.00001)
 my_CoTB.plot_overlaps(my_CoTB) # generates overlaps_decay.png
 my_CoTB.plot_hoppings(my_CoTB) # generates tbparams_decay.png
 ~~~
+```
 
 Note: The overlap and hopping plots should show a rough linear decay
 
@@ -158,15 +188,24 @@ Note: The overlap and hopping plots should show a rough linear decay
     </div>
 </div>
 
-<span id="comparedft"></span>**Compare COGITO band energies to DFT band energies**<br>
-To verify the interpolation of COGITO, the function 'compare_to_DFT' is used to determine the error between the interpolating COITO band energies and DFT band energies. This function reads the DFT energies from an EIGENVAL file from a VASP (band structure) calculation.
+###Compare COGITO band energies to DFT band energies
 
+To verify the band interpolation of COGITO, the function 'compare_to_DFT' is used to determine the error between the interpolating COITO band energies and DFT band energies. This function reads the DFT energies from an EIGENVAL file from a VASP (band structure) calculation.
+
+```{tab} bash (CLI)
+~~~ bash
+COGITOpost --dir "Si/" --eigfile 'EIGENVAL' --no_save_crystal_bonds --no_save_bondswCOHP --no_save_ico
+~~~
+```
+
+```{tab} python
 ~~~ python
 # the EIGENVAL file you want to compare to
 eig_file = my_CoTB.directory + "EIGENVAL"
 # generates compareDFT.png and DFT_band_error.txt
 [band_dist, max_error, band_error] = my_CoTB.compare_to_DFT( my_CoTB, eig_file)
 ~~~
+```
 
 Metrics for the fit quality will be printed and written to the DFT_band_error.txt as below.
 
