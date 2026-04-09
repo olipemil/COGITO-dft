@@ -90,9 +90,9 @@ A couple things to keep in mind for the VASP calculation:
 ## Run COGITO
 
 COGITO reads the POSCAR, POTCAR, OUTCAR, vasprun.xml, and WAVECAR files from the VASP calculation.
-For more on inputs and outputs of the main COGITO module, see  [COGITO files](file_struc.md#cogito).
+For more on inputs and outputs of the main COGITO module, see [COGITO files](file_struc.md#cogito).
 
-```{tab} bash
+```{tab} bash (CLI)
 ~~~ bash
 COGITO --dir "Si/"
 ~~~
@@ -104,6 +104,25 @@ from COGITO_dft.COGITO import run_cogito
 
 direct = "Si/"
 run_cogito(directory=direct)
+~~~
+```
+
+## Analyze quality of COGITO run
+
+Checkes if quality output files are within expected range. If not, suggests tag changes that could improve quality. For more details, see [COGITOanalyze files](file_struc.md#cogitoanalyze).
+
+```{tab} bash (CLI)
+~~~ bash
+COGITOanalyze --dir "Si/"
+~~~
+```
+
+```{tab} python
+~~~ python
+from COGITO_dft.COGITOanalyze import analyze_all
+
+direct = "Si/"
+analyze_all(dir=direct)
 ~~~
 ```
 
