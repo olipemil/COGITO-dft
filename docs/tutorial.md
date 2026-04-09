@@ -36,7 +36,7 @@ export OMP_NUM_THREADS=1
 :::
 
 :::{grid-item}
-:column: 1
+:columns: 1
 <div style="display:flex; align-items:center; justify-content:center; height:100%; font-size:1.5em;">→</div>
 :::
 
@@ -49,7 +49,7 @@ export OMP_NUM_THREADS=1
 :::
 
 :::{grid-item}
-:column: 1
+:columns: 1
 <div style="display:flex; align-items:center; justify-content:center; height:100%; font-size:1.5em;">→</div>
 :::
 
@@ -62,7 +62,7 @@ export OMP_NUM_THREADS=1
 :::
 
 :::{grid-item}
-:column: 1
+:columns: 1
 <div style="display:flex; align-items:center; justify-content:center; height:100%; font-size:1.5em;">→</div>
 :::
 
