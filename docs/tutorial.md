@@ -152,7 +152,7 @@ run_cogito_model(directory=direct)
 
 This general analysis can be broken into 4 parts: **1)** Create class and plot decay of overlap/TB parameters, **2)** Check band interpolation error compared to DFT, **3)** Generation of atom and bond data, and **4)** Generation of the crystal bonds and/or combined bond and COHP projected density of states plots.
 
-For discussion, here is how you could run them individually.
+These can be run in python individually and customized as needed.
 
 ### 1) Create COGITO TB class object and check decay
 
@@ -251,7 +251,7 @@ This can be used to confidently and precisely trace back the crystal covalent bo
 # plot the crystal structure with real bonds!
 # if a bond energy magnitude is > energy_cutoff it will be plotted
 # if the bond length is > bond_max it will not be plotted if an atom is outside the primitive cell
-my_CoUN.get_bonds_figure(energy_cutoff=0.05,bond_max=3)
+my_CoUN.get_crystal_plus_COHP(energy_cutoff=0.05,bond_max=3,auto_label="full") # can set auto_label="mulliken"
 ~~~
 
 <div style="display: flex; justify-content: center;">
