@@ -25,14 +25,14 @@ export OMP_NUM_THREADS=1
 
 ## Standard Workflow
 
-::::{grid} 1 1 6 6
+::::{grid} 2 6 6 6
 :gutter: 0 
 
 :::{grid-item-card} VASP
 :link: tutorial.html#run-vasp
 :link-type: url
 :text-align: center
-:class-body: d-flex align-items-center justify-content-center
+:class-card: d-flex align-items-center justify-content-center
 <!--<span style="font-size:0.8em;">Save WAVECAR from static run with high NBANDS.</span>-->
 :::
 
@@ -45,7 +45,7 @@ export OMP_NUM_THREADS=1
 :link: tutorial.html#run-cogito
 :link-type: url
 :text-align: center
-:class-body: d-flex align-items-center justify-content-center
+:class-card: d-flex align-items-center justify-content-center
 <!--<span style="font-size:0.8em;">Adapt the atomic basis and make tight binding model.</span>-->
 :::
 
@@ -58,7 +58,7 @@ export OMP_NUM_THREADS=1
 :link: tutorial.html#analyze-quality-of-cogito-run
 :link-type: url
 :text-align: center
-:class-body: d-flex align-items-center justify-content-center
+:class-card: d-flex align-items-center justify-content-center
 <!--<span style="font-size:0.8em;">Get guidance on if COGITO run was successful.</span>-->
 :::
 
@@ -72,7 +72,7 @@ export OMP_NUM_THREADS=1
 :link: tutorial.html#run-band-structure-class
 :link-type: url
 :text-align: center
-:class-body: d-flex align-items-center justify-content-center
+:class-card: d-flex align-items-center justify-content-center
 <!--<span style="font-size:0.8em;">Analyze orbital, COHP, or COOP projected quantites.</span>-->
 :::
 
