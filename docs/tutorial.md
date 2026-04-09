@@ -7,26 +7,26 @@ the COGITO tight binding model. The workflow below provides the general outline.
 ## Installation
 
 ```{tab} bash
-```bash
+~~~ bash
 pip install --upgrade pip
 pip install cogito-dft
-```
+~~~
 ```
 
 To install optional dependences (scikit-image, dash, dash-ag-grid) that are used in some COGITOpost functions:
 
 ```{tab} bash
-```bash
+~~~ bash
 pip install "cogito-dft[plot]"
-```
+~~~
 ```
 
 To avoid thread oversubscription and possible stalls **(especially on HPC)**, set:
 
 ```{tab} bash
-```bash
+~~~ bash
 export OMP_NUM_THREADS=1
-```
+~~~
 ```
 
 ## Standard Workflow
