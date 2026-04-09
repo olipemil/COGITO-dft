@@ -74,6 +74,7 @@ export OMP_NUM_THREADS=1
 :::
 
 :::{grid-item-card} Gain chemical insight
+:columns: 3
 :link: tutorial.html#generate-atom-and-bond-data
 :link-type: url
 :text-align: center
@@ -302,9 +303,9 @@ my_CoUN.get_crystal_plus_COHP(energy_cutoff=0.05, bond_max=3, auto_label="full")
     </div>
 </div>
 
-# Additional Analysis
+## Additional Analysis
 
-## Use COGITO for orbital/COHP/COOP projected DOS
+### Orbital, COHP, or COOP projected DOS
 
 Because COGITO forms a nearly complete basis for the charge density, we can accurately determine the percent of each
 atomic orbital in the band wavefunction. Mulliken population analysis is used here to resolve the inherit ambiguity in assigning two-center terms to one orbital.
@@ -344,7 +345,7 @@ my_CoUN.get_COHP(orbs_dict, NN='All')
     </div>
 </div>
 
-## Use COGITO to generate band structure and projections
+### Generate and project on band structure
 
 This class generates the band structure for high symmetry path determined with pymatgen and seekpath. Importantly, this class
 requires an instance of the tight binding class in initialization.
