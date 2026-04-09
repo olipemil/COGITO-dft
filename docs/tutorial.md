@@ -32,8 +32,8 @@ export OMP_NUM_THREADS=1
 :columns: 2
 :link: tutorial.html#run-vasp
 :link-type: url
-
-<span style="font-size:0.8em;">Save WAVECAR from static run with high NBANDS.</span>
+:text-align: center
+<!--<span style="font-size:0.8em;">Save WAVECAR from static run with high NBANDS.</span>-->
 :::
 
 :::{grid-item}
@@ -45,8 +45,8 @@ export OMP_NUM_THREADS=1
 :columns: 2
 :link: tutorial.html#run-cogito
 :link-type: url
-
-<span style="font-size:0.8em;">Adapt the atomic basis and make tight binding model.</span>
+:text-align: center
+<!--<span style="font-size:0.8em;">Adapt the atomic basis and make tight binding model.</span>-->
 :::
 
 :::{grid-item}
@@ -54,12 +54,12 @@ export OMP_NUM_THREADS=1
 <div style="display:flex; align-items:center; justify-content:center; height:100%; font-size:1.5em;">→</div>
 :::
 
-:::{grid-item-card} Quality analysis
+:::{grid-item-card} Check quality
 :columns: 2
 :link: tutorial.md#run-cogito-tight-binding
 :link-type: url
-
-<span style="font-size:0.8em;">Get guidance on if COGITO run was successful.</span>
+:text-align: center
+<!--<span style="font-size:0.8em;">Get guidance on if COGITO run was successful.</span>-->
 :::
 
 :::{grid-item}
@@ -67,12 +67,12 @@ export OMP_NUM_THREADS=1
 <div style="display:flex; align-items:center; justify-content:center; height:100%; font-size:1.5em;">→</div>
 :::
 
-:::{grid-item-card} Chemistry analysis
+:::{grid-item-card} Gain chemical insight
 :columns: 3
 :link: tutorial.html#run-band-structure-class
 :link-type: url
-
-<span style="font-size:0.8em;">Analyze orbital, COHP, or COOP projected quantites.</span>
+:text-align: center
+<!--<span style="font-size:0.8em;">Analyze orbital, COHP, or COOP projected quantites.</span>-->
 :::
 
 ::::
