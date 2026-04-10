@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cogito-dft"
-version = "0.1.0"
+version = "0.1.1"
 description = "Crystal Orbital Guided Iteration To atomic-Orbitals (COGITO) finds an adaptive atomic orbital basis for a given density functional theory (DFT) run, and then decodes the atom and bond contributions to electronic structure."
 readme = "README.md" 
 requires-python = ">=3.4"
