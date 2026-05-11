@@ -12,7 +12,8 @@ import copy
 import math
 
 class COGITO_TB_Model(object):
-    def __init__(self, directory: str, verbose: int = 0, file_suffix: str = "", orbs_orth: bool = False,spin_polar: bool = False) -> None:
+    def __init__(self, directory: str, verbose: int = 0, file_suffix: str = "", file_type: str="npy",tb_file:str="TBparams",
+                 over_file:str="overlaps", orbs_orth: bool = False,spin_polar: bool = False) -> None:
         """
         Initializes the tight binding model from the tb_input.txt, TBparams.txt, and overlaps.txt created by COGITO.
 
@@ -50,9 +51,9 @@ class COGITO_TB_Model(object):
         self.cell_vol = supercell_volume
 
         #read in params
-        self.read_TBparams(file= "TBparams"+file_suffix+".txt")
+        self.read_TBparams(file= tb_file+file_suffix,file_type=file_type)
         if orbs_orth == False:
-            self.read_overlaps(file = "overlaps"+file_suffix+".txt")
+            self.read_overlaps(file = over_file+file_suffix,file_type=file_type)
 
         self.restrict_params(maximum_dist=50,minimum_value=0.00000001)
 
@@ -189,7 +190,7 @@ class COGITO_TB_Model(object):
         self.orb_redcoords = np.array(orbs_pos)
         self.exactorbtype = np.array(exactorbtype)
 
-    def read_TBparams(self,file: str = "TBparams.txt") -> None:
+    def read_TBparams(self,file: str = "TBparams", file_type: str="npy") -> None:
         """
         Reads in the tight binding (hopping) parameters from a file formatted like wannier90_hr.dat.
 
@@ -197,41 +198,51 @@ class COGITO_TB_Model(object):
             file (str): The file name for the TB parameters.
         """
         if self.orbs_orth == True:
-            file = "orth_tbparams.txt"
-        original_name = self.directory + file
-        orig_prefix = original_name.split(".t")[0]
-        filename = original_name
+            file = "orth_tbparams"
+            
+        orig_prefix = self.directory + file 
+        filename = orig_prefix +  "." + file_type
         #print(filename)
         if self.spin_polar == True:
-            filename = orig_prefix + "0" + ".txt"
-        all_files = {}
-        filedata = open(filename)
-        filelines = filedata.readlines()
-        all_files[0] = filelines
+            filename = orig_prefix + "0" + "." + file_type
+
+        atomic_energies = {}
+        TB_params = {}
+        if file_type == "npy":
+            TB_params[0] = np.load(filename)
+            num_orbs = TB_params[0].shape[0]
+            num_trans = np.array([TB_params[0].shape[2],TB_params[0].shape[3],TB_params[0].shape[4]])
+            num_each_dir = np.array((num_trans-1)/2,dtype=np.int_)
+            atomic_energies[0] = np.diag(TB_params[0][:,:,num_each_dir[0],num_each_dir[1],num_each_dir[2]])
+        else:
+            all_files = {}
+            filedata = open(filename)
+            filelines = filedata.readlines()
+            all_files[0] = filelines
+            [trans1,trans2,trans3,num_orbs] = [int(i) for i in filelines[1].strip().split()]
+            print(trans1,trans2,trans3,num_orbs)
+            num_each_dir = np.array([trans1,trans2,trans3])
+            num_trans = num_each_dir*2+1
+            if self.orbs_orth == True:
+                first_line = 100#3+num_orbs #12
+            else:
+                first_line = 3
+            last_line = len(filelines)
+
         if self.spin_polar == True: # read in spin up too
-            filename1 = orig_prefix + "1" + ".txt"
-            filedata1 = open(filename1)
-            filelines1 = filedata1.readlines()
-            all_files[1] = filelines1
-        [trans1,trans2,trans3,num_orbs] = [int(i) for i in filelines[1].strip().split()]
-        print(trans1,trans2,trans3,num_orbs)
-        #num_orbs = int(filelines[1])
-        num_each_dir = np.array([trans1,trans2,trans3])
+            filename1 = orig_prefix + "1" + "." + file_type
+            if file_type == "npy":
+                TB_params[1] = np.load(filename1)
+                atomic_energies[1] = np.diag(TB_params[1][:, :, num_each_dir[0], num_each_dir[1], num_each_dir[2]])
+            else:
+                filedata1 = open(filename1)
+                filelines1 = filedata1.readlines()
+                all_files[1] = filelines1
+
         self.num_each_dir = num_each_dir
         self.num_orbs = num_orbs
-        #print(num_orbs)
-        if self.orbs_orth == True:
-            first_line = 100#3+num_orbs #12
-        else:
-            first_line = 3
-        last_line = len(filelines)
-        #print(filelines[first_line])
-        count = 0
-        #num_each_dir = np.array([2,2,3])# abs(int(filelines[first_line].split()[0]))
-
-        num_trans = num_each_dir*2+1
         self.num_trans = num_trans
-        #print(num_trans)
+        
         #generate list of the displacement between translations
         vec_to_trans = np.zeros((num_trans[0],num_trans[1],num_trans[2],3))
         for x in range(num_trans[0]):
@@ -239,106 +250,115 @@ class COGITO_TB_Model(object):
                 for z in range(num_trans[2]):
                     vec_to_trans[x,y,z] = [x-num_each_dir[0],y-num_each_dir[1],z-num_each_dir[2]]
         self.vec_to_trans = vec_to_trans
-        atomic_energies = {}
-        TB_params = {}
-        for key in list(all_files.keys()):
-            cur_lines = all_files[key]
-            atomic_energies[key] = []
-            #read in the TB parameters
-            TB_params[key] = np.zeros((num_orbs,num_orbs,num_trans[0],num_trans[1],num_trans[2]), dtype=np.complex128)
-            for line in cur_lines[first_line:]:
-                info = line.split()
-                if abs(int(info[0])) <=num_each_dir[0] and abs(int(info[1])) <=num_each_dir[1] and abs(int(info[2])) <=num_each_dir[2]:
-                    trans1 = int(info[0])+num_each_dir[0]
-                    trans2 = int(info[1])+num_each_dir[1]
-                    trans3 = int(info[2])+num_each_dir[2]
-                    orb1 = int(info[3])-1
-                    orb2 = int(info[4])-1
-                    value = float(info[5]) + float(info[6])*1.0j
-                    if TB_params[key][orb1,orb2,trans1,trans2,trans3] != 0:
-                        print("already set TB param")
-                    #only set if orbitals are not on the same atom
-                    same_atom = np.abs(np.array(self.orb_redcoords[orb1]) - np.array(self.orb_redcoords[orb2]))
-                    #print(same_atom)
-
-                    TB_params[key][orb1, orb2, trans1, trans2, trans3] = value
-                    if (same_atom < 0.001).all() and (int(info[0])==0 and int(info[1])==0 and int(info[2])==0) and orb1!=orb2 and abs(value) > 0.0001:
-                        #print("Same atom orbital hopping term that should be zero!", orb1, orb2, value)
-                        #TB_params[key][orb1,orb2,trans1,trans2,trans3] = 0
-                        pass
-                    if (int(info[0])==0 and int(info[1])==0 and int(info[2])==0) and orb1==orb2:
-                        #print("onsite term:",value)
-                        atomic_energies[key].append(value)
+        
+        if file_type != "npy":
+            for key in list(all_files.keys()):
+                cur_lines = all_files[key]
+                atomic_energies[key] = []
+                #read in the TB parameters
+                TB_params[key] = np.zeros((num_orbs,num_orbs,num_trans[0],num_trans[1],num_trans[2]), dtype=np.complex128)
+                for line in cur_lines[first_line:]:
+                    info = line.split()
+                    if abs(int(info[0])) <=num_each_dir[0] and abs(int(info[1])) <=num_each_dir[1] and abs(int(info[2])) <=num_each_dir[2]:
+                        trans1 = int(info[0])+num_each_dir[0]
+                        trans2 = int(info[1])+num_each_dir[1]
+                        trans3 = int(info[2])+num_each_dir[2]
+                        orb1 = int(info[3])-1
+                        orb2 = int(info[4])-1
+                        value = float(info[5]) + float(info[6])*1.0j
+                        if TB_params[key][orb1,orb2,trans1,trans2,trans3] != 0:
+                            print("already set TB param")
+                        #only set if orbitals are not on the same atom
+                        same_atom = np.abs(np.array(self.orb_redcoords[orb1]) - np.array(self.orb_redcoords[orb2]))
+                        #print(same_atom)
+    
+                        TB_params[key][orb1, orb2, trans1, trans2, trans3] = value
+                        if (same_atom < 0.001).all() and (int(info[0])==0 and int(info[1])==0 and int(info[2])==0) and orb1!=orb2 and abs(value) > 0.0001:
+                            #print("Same atom orbital hopping term that should be zero!", orb1, orb2, value)
+                            #TB_params[key][orb1,orb2,trans1,trans2,trans3] = 0
+                            pass
+                        if (int(info[0])==0 and int(info[1])==0 and int(info[2])==0) and orb1==orb2:
+                            #print("onsite term:",value)
+                            atomic_energies[key].append(value)
+            
         if self.verbose > -1:
             print("the atomic orbital energies!",atomic_energies)
-        #if self.spin_polar:
+            
         self.atomic_energies = atomic_energies
         self.TB_params = TB_params
-        #else: # pass just the parameters instead of a dictionary with one key/item
-        #    self.atomic_energies = atomic_energies[0]
-        #    self.TB_params = TB_params[0]
 
-    def read_overlaps(self,file: str = "overlaps.txt") -> None:
+    def read_overlaps(self,file: str = "overlaps", file_type: str="npy") -> None:
         """
         Reads in the orbital overlaps from a file formatted like wannier90_hr.dat.
 
         Args:
             file (str): The file name for the overlaps.
         """
-        original_name = self.directory + file
-        filename = original_name
-        orig_prefix = original_name.split(".t")[0]
-        if self.spin_polar == True:
-            filename = orig_prefix + "0" + ".txt"
-        all_files = {}
-        filedata = open(filename)
-        filelines = filedata.readlines()
-        all_files[0] = filelines
-        if self.spin_polar == True: # read in spin up too
-            filename1 = orig_prefix + "1" + ".txt"
-            filedata1 = open(filename1)
-            filelines1 = filedata1.readlines()
-            all_files[1] = filelines1
 
-        if self.orbs_orth == True:
-            first_line = 100 #3+num_orbs #12
-        else:
-            first_line = 3
         num_orbs = self.num_orbs
         num_trans = self.num_trans
         num_each_dir = np.array((self.num_trans-1)/2,dtype=np.int_)
-        #print(num_trans)
-        #generate list of the displacement between translations
+
+        orig_prefix = self.directory + file
+        filename = orig_prefix + "." + file_type
+        # print(filename)
+        if self.spin_polar == True:
+            filename = orig_prefix + "0" + "." + file_type
+
         atomic_overlaps = {}
         overlaps_params = {}
-        for key in list(all_files.keys()):
-            cur_lines = all_files[key]
-            atomic_overlaps[key] = []
-            #read in the TB parameters
-            overlaps_params[key] = np.zeros((num_orbs,num_orbs,num_trans[0],num_trans[1],num_trans[2]), dtype=np.complex128)
-            for line in cur_lines[first_line:]:
-                info = line.split()
-                if abs(int(info[0])) <=num_each_dir[0] and abs(int(info[1])) <=num_each_dir[1] and abs(int(info[2])) <=num_each_dir[2]:
-                    trans1 = int(info[0])+num_each_dir[0]
-                    trans2 = int(info[1])+num_each_dir[1]
-                    trans3 = int(info[2])+num_each_dir[2]
-                    orb1 = int(info[3])-1
-                    orb2 = int(info[4])-1
-                    value = float(info[5]) + float(info[6])*1.0j
-                    if overlaps_params[key][orb1,orb2,trans1,trans2,trans3] != 0:
-                        print("already set TB param")
-                    #only set if orbitals are not on the same atom
-                    same_atom = np.abs(np.array(self.orb_redcoords[orb1]) - np.array(self.orb_redcoords[orb2]))
-                    #print(same_atom)
+        if file_type == "npy":
+            overlaps_params[0] = np.load(filename)
+            atomic_overlaps[0] = np.diag(overlaps_params[0][:, :, num_each_dir[0], num_each_dir[1], num_each_dir[2]])
+        else:
+            all_files = {}
+            filedata = open(filename)
+            filelines = filedata.readlines()
+            all_files[0] = filelines
+            if self.orbs_orth == True:
+                first_line = 100 #3+num_orbs #12
+            else:
+                first_line = 3
+            
+        if self.spin_polar == True: # read in spin up too
+            filename1 = orig_prefix + "1" + "." + file_type
+            if file_type == "npy":
+                overlaps_params[1] = np.load(filename1)
+                atomic_overlaps[1] = np.diag(overlaps_params[1][:, :, num_each_dir[0], num_each_dir[1], num_each_dir[2]])
+            else:
+                filedata1 = open(filename1)
+                filelines1 = filedata1.readlines()
+                all_files[1] = filelines1
 
-                    overlaps_params[key][orb1, orb2, trans1, trans2, trans3] = value
-                    if (same_atom < 0.001).all() and (int(info[0])==0 and int(info[1])==0 and int(info[2])==0) and orb1!=orb2 and abs(value) > 0.0001:
-                        #print("Same atom orbital overlap that should be zero!", orb1, orb2, value)
-                        #TB_params[orb1,orb2,trans1,trans2,trans3] = 0
-                        pass
-                    if (int(info[0])==0 and int(info[1])==0 and int(info[2])==0) and orb1==orb2:
-                        #print("onsite term:",value)
-                        atomic_overlaps[key].append(value)
+        if file_type != "npy":
+            for key in list(all_files.keys()):
+                cur_lines = all_files[key]
+                atomic_overlaps[key] = []
+                #read in the TB parameters
+                overlaps_params[key] = np.zeros((num_orbs,num_orbs,num_trans[0],num_trans[1],num_trans[2]), dtype=np.complex128)
+                for line in cur_lines[first_line:]:
+                    info = line.split()
+                    if abs(int(info[0])) <=num_each_dir[0] and abs(int(info[1])) <=num_each_dir[1] and abs(int(info[2])) <=num_each_dir[2]:
+                        trans1 = int(info[0])+num_each_dir[0]
+                        trans2 = int(info[1])+num_each_dir[1]
+                        trans3 = int(info[2])+num_each_dir[2]
+                        orb1 = int(info[3])-1
+                        orb2 = int(info[4])-1
+                        value = float(info[5]) + float(info[6])*1.0j
+                        if overlaps_params[key][orb1,orb2,trans1,trans2,trans3] != 0:
+                            print("already set TB param")
+                        #only set if orbitals are not on the same atom
+                        same_atom = np.abs(np.array(self.orb_redcoords[orb1]) - np.array(self.orb_redcoords[orb2]))
+                        #print(same_atom)
+
+                        overlaps_params[key][orb1, orb2, trans1, trans2, trans3] = value
+                        if (same_atom < 0.001).all() and (int(info[0])==0 and int(info[1])==0 and int(info[2])==0) and orb1!=orb2 and abs(value) > 0.0001:
+                            #print("Same atom orbital overlap that should be zero!", orb1, orb2, value)
+                            #TB_params[orb1,orb2,trans1,trans2,trans3] = 0
+                            pass
+                        if (int(info[0])==0 and int(info[1])==0 and int(info[2])==0) and orb1==orb2:
+                            #print("onsite term:",value)
+                            atomic_overlaps[key].append(value)
         if self.verbose > 1:
             print("the atomic orbital self overlaps!",atomic_overlaps)
         #if self.spin_polar:
@@ -2474,6 +2494,46 @@ class COGITO_UNIFORM(object):
                 plt.show()
             plt.close()
 
+        if len(self.keys) == 2:
+            for key in self.keys:
+                fig = plt.figure()
+                fig.set_size_inches(3, 5)
+                ax = fig.add_subplot(111)
+                # plot vertically
+                ax.plot(np.zeros(points), energies, '--', color="grey", linewidth=0.8)
+
+                linestyle = ["", "--"]
+                color = ["dimgray", "lightseagreen"]
+                mini = []
+                maxi = []
+                data = {}
+
+                data[key] = [total_coop[key], energies, linestyle[key], color[key]]
+                ax.plot(total_coop[key], energies, linestyle[key], color=color[key])
+                mini.append(np.min(total_coop[key]) - 0.05)
+                maxi.append(np.max(total_coop[key]) + 0.05)
+
+                mini = min(mini)
+                maxi = max(maxi)
+                # mini = -1.2
+                # maxi = 0.5
+                ax.plot([mini, maxi], [0, 0], "--", color="grey", linewidth=0.8)
+                ax.set_ylabel("Energy (eV)")
+                if orbProj:
+                    ax.set_xlabel(label)
+                else:
+                    ax.set_xlabel("COOP")
+                plt.ylim(ylim)
+                plt.xlim((mini, maxi))
+                print("showing plot")
+                # plt.xlim((mini,maxi))
+                # plt.gca().invert_xaxis()
+                fig.tight_layout()
+                plt.savefig(self.directory + 'COOP_DOS'+str(key)+'.png', transparent=True, dpi=150, format='png')
+                if self.show_figs:
+                    plt.show()
+                plt.close()
+
     def get_projectedDOS(self, elem : str, ylim: list = (-10, 10), sigma: float=0.1) -> None:
         """
         Returns the COGITO-orbital projected density of states for a specific element. By construction, this performs the projection by Mulliken-style analysis.
@@ -2504,6 +2564,12 @@ class COGITO_UNIFORM(object):
         elemorbs = np.array(self.exactorbtype)[iselemorb]
         elemorbs = np.array([s[0] for s in elemorbs])
         uniqelemorbs = np.unique(elemorbs)
+        colors = {}
+        colors['s'] = "tab:orange"
+        colors['p'] = "tab:blue"
+        colors['d'] = "tab:green"
+        colors['s2'] = "tab:pink"
+        colors['p2'] = "gold"
 
         # make energies
         shifted_energies = {}
@@ -2576,18 +2642,39 @@ class COGITO_UNIFORM(object):
         for i,data in enumerate(allprojs):
             for key in self.keys:
                 #data[key] = [total_coop[key],energies,linestyle[key],color[key]]
-                ax.plot(data[key][0], data[key][1],data[key][2],label=uniqelemorbs[i])
-                total_dos[key] += data[key][0]
+                if len(self.keys)==2:
+                    if key==0:
+                        sign=-1
+                    else:
+                        sign=+1
+                else:
+                    sign=+1
+                if key ==0:
+                    ax.plot(sign*data[key][0], data[key][1],data[key][2],label=uniqelemorbs[i],color=colors[uniqelemorbs[i]])
+                else:
+                    ax.plot(sign*data[key][0], data[key][1],data[key][2],color=colors[uniqelemorbs[i]])
 
+                total_dos[key] += data[key][0]
         for key in self.keys:
-            ax.plot(total_dos[key], data[key][1],'--',color="gray",label=elem,linewidth=1)
-            ax.plot(allatmDOS[key], data[key][1],data[key][2],color="black",label="total",linewidth=1)
+            if len(self.keys)==2:
+                if key==0:
+                    sign=-1
+                else:
+                    sign=+1
+            else:
+                sign=+1
+            ax.plot(sign*total_dos[key], data[key][1],'--',color="gray",label=elem,linewidth=1)
+            ax.plot(sign*allatmDOS[key], data[key][1],data[key][2],color="black",label="total",linewidth=1)
         max_proj = np.amax(allatmDOS[key][(data[key][1]>ylim[0]) & (data[key][1] < 0)])
 
         ax.plot([0,0], [ylim[0],ylim[1]],'--', color="grey",linewidth=0.8)
 
-        ax.plot([-0.05, max_proj+0.1], [0, 0],"--", color="grey",linewidth=0.8)
-        plt.xlim((-0.05, max_proj+0.1))
+        if len(self.keys)==2:
+            plt.xlim((-(max_proj + 1), max_proj + 1))
+            ax.plot([-(max_proj + 1), max_proj+1], [0, 0],"--", color="grey",linewidth=2)
+        else:
+            ax.plot([-0.05, max_proj + 0.1], [0, 0], "--", color="grey", linewidth=2)
+            plt.xlim((-0.05, max_proj + 0.1))
         plt.ylim(ylim)
         ax.set_xlabel("orbital pDOS")
         ax.set_ylabel("Energy (eV)")
@@ -3127,7 +3214,7 @@ class COGITO_UNIFORM(object):
             all_bonds_spin[key]["pf"] = pfbonds
             all_bonds_spin[key]["fp"] = fpbonds
             all_bonds_spin[key]["df"] = pfbonds
-            all_bonds_spin[key]["fd"] = fpbonds
+            all_bonds_spin[key]["fd"] = fdbonds
             all_bonds_spin[key]["ff"] = ffbonds
 
         # combine spin up and down or double energy
@@ -3843,7 +3930,7 @@ class COGITO_UNIFORM(object):
             all_bonds_spin[key]["pf"] = pfbonds
             all_bonds_spin[key]["fp"] = fpbonds
             all_bonds_spin[key]["df"] = pfbonds
-            all_bonds_spin[key]["fd"] = fpbonds
+            all_bonds_spin[key]["fd"] = fdbonds
             all_bonds_spin[key]["ff"] = ffbonds
 
 
@@ -4841,7 +4928,7 @@ class COGITO_UNIFORM(object):
             all_bonds_spin[key]["pf"] = pfbonds
             all_bonds_spin[key]["fp"] = fpbonds
             all_bonds_spin[key]["df"] = pfbonds
-            all_bonds_spin[key]["fd"] = fpbonds
+            all_bonds_spin[key]["fd"] = fdbonds
             all_bonds_spin[key]["ff"] = ffbonds
 
         # combine spin up and down or double energy
@@ -7801,7 +7888,8 @@ def complex128funs(phi,theta,sphharm_key):
             key_set[6] * (35 / 32 / np.pi)**(1 / 2) * np.sin(theta)**3 * np.cos(3*phi))
         return orb
 
-def run_cogito_model(dir:str="./",tag:str="",eigfile:str="EIGENVAL",save_quality_info:bool=True,
+def run_cogito_model(dir:str="./",tag:str="",eigfile:str="EIGENVAL",tb_file:str="TBparams",over_file:str="overlaps",
+                     file_type: str="npy",save_quality_info:bool=True, show_figs:bool=True,
                      save_crystal_bonds:bool=True,save_bondswCOHP:bool=True,save_ico:bool=True,max_dist:float=15,
                      min_val:float=0.00001,auto_label:str="full",densify:float=1,energy_cutoff:float=0.2,
                      bond_max:float=3,crystal_field=[]):
@@ -7816,7 +7904,11 @@ def run_cogito_model(dir:str="./",tag:str="",eigfile:str="EIGENVAL",save_quality
         dir (str): The directory that contains the COGITO output files.
         tag (str): The tag appended to COGITO output files.
         eigfile (str): The EIGVAL file to use for compare_to_DFT(). Note: is appended to dir.
+        tb_file (str): The file name for the tight binding parmaeters.
+        over_file (str): The file name for the overlap parameters.
+        file_type (str): The suffix of the parameters. Options are 'npy' or 'txt'. If 'txt', is same format as wannier90.
         save_quality_info (bool): Whether to make hopping/overlap decay plots and DFT band error analysis.
+        show_figs (bool): If called, does not call any plt.show() or fig.show().
         save_crystal_bonds (bool): Whether to make and save the crystal bonds plot.
         save_bondswCOHP (bool): Whether to make and save the crystal bonds plot interacting with the COHP vs energy.
         save_ico (bool): Whether to save integrated COHP and COOP data for speedy use in COGITOico.py.
@@ -7833,7 +7925,8 @@ def run_cogito_model(dir:str="./",tag:str="",eigfile:str="EIGENVAL",save_quality
 
     """
 
-    COGITOTB = COGITO_TB_Model(dir, file_suffix=tag)  # should be maximum distance
+    COGITOTB = COGITO_TB_Model(dir, file_suffix=tag, tb_file=tb_file,over_file=over_file,file_type=file_type)  # should be maximum distance
+    COGITOTB.show_figs = show_figs
     COGITOTB.normalize_params()
     for ai in range(len(crystal_field)):
         COGITOTB.plot_crystal_field(COGITOTB, crystal_field[ai])
@@ -7883,7 +7976,11 @@ def main(argv=None):
     analyzer_args.add_argument("--dir",type=str,help="The directory that contains the COGITO output files.",default="./")
     analyzer_args.add_argument("--tag",type=str,help="The tag appended to COGITO output files.",default="")
     analyzer_args.add_argument("--eigfile",type=str,help="The EIGVAL file to use for compare_to_DFT(). Note is appended to dir",default="EIGENVAL")
+    analyzer_args.add_argument("--tb_file",type=str,help="The file name for the tight binding parameters.",default="TBparams")
+    analyzer_args.add_argument("--over_file",type=str,help="The file name for the tight binding parameters.",default="overlaps")
+    analyzer_args.add_argument("--file_type",type=str,help="The suffix of the parameters. Options are 'npy' or 'txt'. If 'txt', is same format as wannier90.",default="npy")
     analyzer_args.add_argument("--no_save_quality_info",help="If called, does not make hopping/overlap decay plots and DFT band error analysis.",action='store_true') #not #
+    analyzer_args.add_argument("--no_show_figs",help="If called, does not call any plt.show() or fig.show().",action='store_true') #not #
     analyzer_args.add_argument("--no_save_crystal_bonds",help="If called, does not make and save the crystal bonds plot.",action='store_true') #not #
     analyzer_args.add_argument("--no_save_bondswCOHP",help="If called, does not make and save the crystal bonds plot interacting with the COHP vs energy.",action='store_true') #not #
     analyzer_args.add_argument("--no_save_ico",help="If called, does not save integrated COHP and COOP data for speedy use in COGITOico.py.",action='store_true') #not #
@@ -7897,7 +7994,8 @@ def main(argv=None):
 
     args = analyzer_args.parse_args(argv)
 
-    run_cogito_model(dir=args.dir,tag=args.tag,eigfile=args.eigfile,save_quality_info=not args.no_save_quality_info,
+    run_cogito_model(dir=args.dir,tag=args.tag,eigfile=args.eigfile,tb_file=args.tb_file,over_file=args.over_file,file_type=args.file_type,
+                     save_quality_info=not args.no_save_quality_info,show_figs=not args.no_show_figs,
                      save_crystal_bonds=not args.no_save_crystal_bonds,save_bondswCOHP=not args.no_save_bondswCOHP,
                      save_ico=not args.no_save_ico,max_dist=args.max_dist,min_val=args.min_val,auto_label=args.auto_label,
                      densify=args.densify,energy_cutoff=args.energy_cutoff,bond_max=args.bond_max,
