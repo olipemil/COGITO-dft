@@ -831,7 +831,7 @@ class COGITO_ICO(object):
             all_bonds_spin[key]["pf"] = pfbonds
             all_bonds_spin[key]["fp"] = fpbonds
             all_bonds_spin[key]["df"] = pfbonds
-            all_bonds_spin[key]["fd"] = fpbonds
+            all_bonds_spin[key]["fd"] = fdbonds
             all_bonds_spin[key]["ff"] = ffbonds
 
 
@@ -1555,7 +1555,7 @@ class COGITO_ICO(object):
             all_bonds_spin[key]["pf"] = pfbonds
             all_bonds_spin[key]["fp"] = fpbonds
             all_bonds_spin[key]["df"] = pfbonds
-            all_bonds_spin[key]["fd"] = fpbonds
+            all_bonds_spin[key]["fd"] = fdbonds
             all_bonds_spin[key]["ff"] = ffbonds
 
 
@@ -2628,7 +2628,7 @@ class COGITO_ICO(object):
             all_bonds_spin[key]["pf"] = pfbonds
             all_bonds_spin[key]["fp"] = fpbonds
             all_bonds_spin[key]["df"] = pfbonds
-            all_bonds_spin[key]["fd"] = fpbonds
+            all_bonds_spin[key]["fd"] = fdbonds
             all_bonds_spin[key]["ff"] = ffbonds
 
         # combine spin up and down or double energy
