@@ -1,18 +1,42 @@
 @file{TBparams,
-file_name="TBparams<tag>.txt",
+file_name="TBparams<tag>.npy",
 tags=['required','output'],
 run_with=["COGITO.get_TBparameter()","COGITO.generate_TBmodel()","run_cogito()"],
 run_CLI="COGITO.py --dir DIR",
-more_info="Tight-binding hopping parameters in a Wannier90-style format. Contains real and imaginary parts for each orbital pair and translation vector. Primary input to COGITOpost for all band structure and DOS calculations.",
-file_img='PbO/TBparams.txt',
+skip_CLI="COGITO.py --dir DIR --file_type 'txt'",
+needed_tags="file_type='npy' (default), needs version >=0.2.0",
+more_info="Tight-binding hopping parameters saved as a npy file. Contains real and imaginary parts for each orbital pair and translation vector. Primary input to COGITOpost for all band structure and DOS calculations.",
 }
 
 @file{overlaps,
-file_name="overlaps<tag>.txt",
+file_name="overlaps<tag>.npy",
 tags=['required','output'],
 run_with=["COGITO.get_TBparameter()","COGITO.generate_TBmodel()","run_cogito()"],
 run_CLI="COGITO.py --dir DIR",
+skip_CLI="COGITO.py --dir DIR --file_type 'txt'",
+needed_tags="file_type='npy' (default), needs version >=0.2.0",
 more_info="Orbital overlap matrix parameters in the same format as TBparams. Required alongside TBparams and tb_input by COGITOpost to initialize the TB model.",
+}
+
+@file{TBparamsold,
+file_name="TBparams<tag>.txt",
+tags=['output'],
+run_with=["COGITO.get_TBparameter()","COGITO.generate_TBmodel()","run_cogito()"]
+run_CLI="COGITO.py --dir DIR --file_type 'txt'",
+skip_CLI="COGITO.py --dir DIR",
+needed_tags="file_type='txt'",
+more_info="This is depreciated from default in v0.2.0, where parameters are saved to npy files. Tight-binding hopping parameters in a Wannier90-style format. Contains real and imaginary parts for each orbital pair and translation vector. Primary input to COGITOpost for all band structure and DOS calculations.",
+file_img='PbO/TBparams.txt',
+}
+
+@file{overlapsold,
+file_name="overlaps<tag>.txt",
+tags=['output'],
+run_with=["COGITO.get_TBparameter()","COGITO.generate_TBmodel()","run_cogito()"],
+run_CLI="COGITO.py --dir DIR --file_type 'txt'",
+skip_CLI="COGITO.py --dir DIR",
+needed_tags="file_type='txt'",
+more_info="This is depreciated from default in v0.2.0, where parameters are saved to npy files. Orbital overlap matrix parameters in the same format as TBparams. Required alongside TBparams and tb_input by COGITOpost to initialize the TB model.",
 file_img='PbO/overlaps.txt',
 }
 
