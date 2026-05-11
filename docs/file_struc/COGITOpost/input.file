@@ -10,7 +10,7 @@ more_info="Structural input file for the TB model. Written by COGITO. Contains l
 file_name="TBparams<tag>.npy",
 tags=['required','input'],
 run_with=["COGITO_TB_Model.__init__()"],
-needed_tags="file_type='npy' (default), tb_file='TBparams' (default), needs version >=0.2.0",
+needed_tags="file_type='npy' (default), tb_file='TBparams' (default), version>=0.2.0",
 more_info="Tight-binding hopping parameters saved as npy file. Can specify file name or path (from --dir) with --tb_file. Required alongside overlaps.npy and tb_input.txt to initialize the TB model. If spin_polar=True, reads TBparams<tag>0.npy and TBparams<tag>1.npy for spin-up and spin-down.",
 }
 
@@ -18,13 +18,13 @@ more_info="Tight-binding hopping parameters saved as npy file. Can specify file 
 file_name="overlaps<tag>.npy",
 tags=['required','input'],
 run_with=["COGITO_TB_Model.__init__()"],
-needed_tags="file_type='npy' (default), over_file='overlaps' (default), orbs_orth=False (default), needs version >=0.2.0",
+needed_tags="file_type='npy' (default), over_file='overlaps' (default), orbs_orth=False (default), version>=0.2.0",
 more_info="Orbital overlap matrix saved as npy file. Can specify file name or path (from --dir) with --over_file. Required unless orbs_orth=True, in which case it is skipped. If spin_polar=True, reads overlaps<tag>0.npy and overlaps<tag>1.npy.",
 }
 
 @file{TBparamsold,
 file_name="TBparams<tag>.txt",
-tags=['required','input'],
+tags=['input'],
 run_with=["COGITO_TB_Model.__init__()"],
 needed_tags="file_type='txt', tb_file='TBparams' (default)"
 more_info="This is depreciated from default in v0.2.0, where parameters are read in as npy files. Tight-binding hopping parameters in Wannier90-style format. Required alongside overlaps.txt and tb_input.txt to initialize the TB model. If spin_polar=True, reads TBparams<tag>0.txt and TBparams<tag>1.txt for spin-up and spin-down.",
@@ -32,7 +32,7 @@ more_info="This is depreciated from default in v0.2.0, where parameters are read
 
 @file{overlapsold,
 file_name="overlaps<tag>.txt",
-tags=['required','input'],
+tags=['input'],
 run_with=["COGITO_TB_Model.__init__()"],
 needed_tags="file_type='txt', over_file='overlaps' (default), orbs_orth=False (default)",
 more_info="This is depreciated from default in v0.2.0, where parameters are read in as npy files. Orbital overlap matrix in Wannier90-style format. Required unless orbs_orth=True, in which case it is skipped. If spin_polar=True, reads overlaps<tag>0.txt and overlaps<tag>1.txt.",
