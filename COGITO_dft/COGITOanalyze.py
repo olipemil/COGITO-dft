@@ -46,11 +46,12 @@ def analyze_orb_converg_info(dir: str = '',tag: str = '',make_change_plot: bool 
     # first plot orbital percent change by type
     if make_change_plot:
         colors =['tab:blue', 'tab:orange', 'tab:green', 'tab:red', 'tab:purple', 'tab:brown', 'tab:pink', 'tab:gray', 'tab:olive', 'tab:cyan']
-        hatch_type = ["","//","xx"]
+        hatch_type = ["","//","xx",'|']
         orb_switch = {}
         orb_switch['s'] = 0
         orb_switch['p'] = 1
         orb_switch['d'] = 2
+        orb_switch['f'] = 3
         uniq_elems,ind,elems = np.unique(atm_types,return_inverse=True,return_index=True)
         # rearange the uniq_elems so that it is in the same order as the elements in cell defintion
         uniq_elems = uniq_elems[np.argsort(ind)]
@@ -70,6 +71,10 @@ def analyze_orb_converg_info(dir: str = '',tag: str = '',make_change_plot: bool 
             else:
                 keep_bool = atmnum==atm
             uniq_orbs = np.unique(orb_types[keep_bool])[::-1]
+            for orb in range(len(uniq_orbs)):
+                if 'f' in uniq_orbs[orb]:
+                    uniq_orbs[orb:-1] = uniq_orbs[orb+1:]
+                    uniq_orbs[-1] = 'f'
             avg_chang = []
             color = colors[elems[keep_bool][0]]
             hatch = []
@@ -82,7 +87,7 @@ def analyze_orb_converg_info(dir: str = '',tag: str = '',make_change_plot: bool 
             x_label.append(np.average(x))
 
             offset += len(uniq_orbs)*width + 0.2
-        plt.bar([-1,-0.8,-0.6], [0,0,0], width - 0.01, ec="black",color="white", fill=True, hatch=["","////","xxxx"], linestyle="-",linewidth=2 ,label = ["s","p","d"])
+        plt.bar([-1,-0.8,-0.6,-0.4], [0,0,0,0], width - 0.01, ec="black",color="white", fill=True, hatch=["","////","xxxx","|||"], linestyle="-",linewidth=2 ,label = ["s","p","d","f"])
         offset += -0.2
         plt.ylim(-np.amax(np.abs(orb_change))-1,np.amax(np.abs(orb_change))+1)
         plt.plot([0,offset],[0,0],color="black")
@@ -128,7 +133,7 @@ def analyze_orb_converg_info(dir: str = '',tag: str = '',make_change_plot: bool 
     #print("avg radial change per loop:",avg_radial_chang)
     #print("avg radius change per loop:",avg_radius_chang)
 
-    if ((avg_radial_chang[1:]-avg_radial_chang[:-1]) > 0).any():
+    if ((avg_radial_chang[-1]-avg_radial_chang[:-1]) > 0).any():
         iserror = True
         print("ERROR:   The change in radial part is larger in later step. This means the convergence procedure isn't working properly.")
         print("         The average change in radial part per loop is: ", avg_radial_chang)
@@ -138,7 +143,7 @@ def analyze_orb_converg_info(dir: str = '',tag: str = '',make_change_plot: bool 
         print("         or changing orbital initialization (include_excited in generate_TBmodel).")
         print("         If everything else works fine, proceed but interpret results cautiously.")
 
-    if ((avg_radius_chang[1:] - avg_radius_chang[:-1]) > 0).any():
+    if ((avg_radius_chang[-1] - avg_radius_chang[:-1]) > 0).any():
         iserror = True
         print("ERROR:   The change in orbital radius is larger in later step. This means the convergence procedure isn't working properly.")
         print("         The average change in radius part per loop is: ", avg_radius_chang)
@@ -153,7 +158,7 @@ def analyze_orb_converg_info(dir: str = '',tag: str = '',make_change_plot: bool 
     if (gaus_fit_error > 0.10).any():
         val = np.around(gaus_fit_error[gaus_fit_error > 0.10]*100,decimals = 2)
         iserror = True
-        print("ERROR:   The final gaussian fit is more than 10% off of the gaus+exp fit. This could be fine, useless ", val, "is especially large.")
+        print("ERROR:   The final gaussian fit is more than 10% off of the gaus+exp fit. This could be fine, useless ", val, "% is especially large.")
         print("         Check 'fit_cogito.png' for visual difference between gaus+exp fit (dark purple) and final gaus fit (pink). Generate file with 'save_orb_figs=True' in generate_TBmodel()")
         print("         The main solution for this involves tuning hyperparameters for the fitting, which is generally a big pain.")
         print("         Please submit issue to COGITO github repo or email olipemil@umich.edu.")
@@ -384,11 +389,20 @@ def analyze_all(dir: str = '',tag: str = '',make_change_plot: bool = True, show_
         try:
             analyze_orb_converg_info(dir=dir,tag=tag,make_change_plot=make_change_plot,show_fig=show_fig, group_same_elem=group_same_elem)
         except:
-            print("Orbital convergence analysis failed. Check that (dir+'orb_converg_info'+tag+'.json') exists.")
+            try: # if spin polarized this will work
+                analyze_orb_converg_info(dir=dir, tag=tag+"0", make_change_plot=make_change_plot, show_fig=show_fig,
+                                         group_same_elem=group_same_elem)
+                analyze_orb_converg_info(dir=dir,tag=tag+"1",make_change_plot=make_change_plot,show_fig=show_fig, group_same_elem=group_same_elem)
+            except:
+                print("Orbital convergence analysis failed. Check that (dir+'orb_converg_info'+tag+'.json') exists.")
         try:
             analyze_spill_error(dir=dir,tag=tag)
         except:
-            print("Spill and orbital mixing analysis failed. Check that (dir+'error_output'+tag+'.txt') exists.")
+            try: # if spin polarized this will work
+                analyze_spill_error(dir=dir,tag=tag+"0")
+                analyze_spill_error(dir=dir,tag=tag+"1")
+            except:
+                print("Spill and orbital mixing analysis failed. Check that (dir+'error_output'+tag+'.txt') exists.")
 
         try:
             analyze_band_error(dir=dir,tag=tag)
@@ -420,12 +434,22 @@ def main(argv=None):
                 try:
                     analyze_orb_converg_info(args.dir,args.tag,not args.no_make_change_plot,args.show_fig,not args.no_group_same_elem)
                 except:
-                    print("Orbital convergence analysis failed. Check that (dir+'orb_converg_info'+tag+'.json') exists.")
+                    try:  # if spin polarized this will work
+                        analyze_orb_converg_info(args.dir, args.tag+"0", not args.no_make_change_plot, args.show_fig,
+                                                 not args.no_group_same_elem)
+                        analyze_orb_converg_info(args.dir, args.tag+"1", not args.no_make_change_plot, args.show_fig,
+                                                 not args.no_group_same_elem)
+                    except:
+                        print("Orbital convergence analysis failed. Check that (dir+'orb_converg_info'+tag+'.json') exists.")
             if 'spill' in args.files:
                 try:
                     analyze_spill_error(args.dir,args.tag)
                 except:
-                    print("Spill and orbital mixing analysis failed. Check that (dir+'error_output'+tag+'.txt') exists.")
+                    try:  # if spin polarized this will work
+                        analyze_spill_error(args.dir,args.tag+"0")
+                        analyze_spill_error(args.dir,args.tag+"1")
+                    except:
+                        print("Spill and orbital mixing analysis failed. Check that (dir+'error_output'+tag+'.txt') exists.")
 
             if 'band' in args.files:
                 try:
