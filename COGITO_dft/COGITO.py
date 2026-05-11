@@ -308,8 +308,9 @@ class COGITO(object):
 
 
     def generate_TBmodel(self, invariant: bool = True, irreducible_grid=True, verbose=0, tag="", include_excited=1, calc_nrms=False, save_orb_converg_info:bool=True,
-                         orbfactor=1.0, num_steps=50, num_outer=3, plot_orbs = False,
-                         min_proj=0.01, band_opt=True,orb_opt=True,orb_orth=False,start_from_orbnpy = False,plot_projBS = False,plot_projDOS=False,orbs = None,save_orb_data=False,save_orb_figs=False,minimum_orb_energy: float=-60,min_duplicate_energy:float=-60):
+                         orbfactor=1.0, num_steps=50, num_outer=4, plot_orbs = False,
+                         min_proj=0.01, band_opt=True,orb_opt=True,orb_orth=False,start_from_orbnpy = False,plot_projBS = False,plot_projDOS=False,orbs = None,
+                         save_orb_data=False,save_orb_figs=False,minimum_orb_energy: float=-60,min_duplicate_energy:float=-60, file_type: str="npy"):
         """
         Runs all the functions neccessary to generate the TB interpolation.
         REQUIRES UNIFORM KPT GRID WITH NO SYMMETRY OR FULL SYMMETRY FOR TB MODEL.
@@ -346,6 +347,7 @@ class COGITO(object):
             save_orb_figs (bool): Saves the plot of numerical orbital data for the converging basis. Not easily interpreted.
             minimum_orb_energy (float): The lower limit to add semi-core states in the POTCAR into the COGITO basis. Uses the atomic orbital energy listed in POTCAR.
             min_duplicate_energy (float): The lower limit to add semi-core states when there is another valence state of the same l quantum number in the POTCAR into the COGITO basis. Uses the atomic orbital energy listed in POTCAR.
+            file_type (str): The lower limit to add semi-core states in the POTCAR into the COGITO basis. Uses the atomic orbital energy listed in POTCAR.
 
         Usage:
             new_model = COGITO("silicon/")
@@ -361,6 +363,7 @@ class COGITO(object):
         self.save_orb_figs = save_orb_figs
         self.include_excited = include_excited
         self.tag = tag
+        self.og_tag = tag
         if self.spin_polar:
             self.tag = tag + str(self.spin)
 
@@ -409,7 +412,7 @@ class COGITO(object):
                 elapsed_time2 += time2 - time1
                 print("elapsed time for converged orbs:",elapsed_time2)
                 print("")
-                self.fit_to_atomic_orb(plot_orbs=plot_orbs,orbfactor=orbfactor)
+                self.fit_to_atomic_orb(plot_orbs=plot_orbs,orbfactor=orbfactor,outer=outer)
                 time3 = time.time()
                 # Calculate elapsed time
                 elapsed_time3 += time3 - time2
@@ -524,7 +527,7 @@ class COGITO(object):
         
         # finally generate the kdep hamiltonians and the real dep TB params
         self.get_hamiltonian()
-        self.get_TBparameter()
+        self.get_TBparameter(file_type)
 
         #if orb_orth:
         #    print("orthogonalizing basis")
@@ -545,7 +548,7 @@ class COGITO(object):
         total_time = elapsed_time1+elapsed_time2+elapsed_time3+elapsed_time4+elapsed_time5+elapsed_time6
         print("total time:",total_time)
 
-    def test_initialorbs(self,verbose=0, plot_orbs = False,include_excited=1, low_factor=0.8 ,high_factor=1.2, num_fac=9,num_outer=2,tag='',min_proj=0.02,num_steps=50,minimum_orb_energy: float=-60,min_duplicate_energy:float=-60):
+    def test_initialorbs(self,verbose=0, plot_orbs = False,include_excited=1, low_factor=0.8 ,high_factor=1.2, num_fac=9,num_outer=4,tag='',min_proj=0.01,num_steps=50,minimum_orb_energy: float=-60,min_duplicate_energy:float=-60):
         """
         Tests dependance of orbital radius and quality on the size of initial orbitals.
         Only runs the convergence of the orbitals without projecting them or generating the TB model.
@@ -572,6 +575,7 @@ class COGITO(object):
         self.save_orb_figs = False
         self.include_excited = include_excited
         self.tag = tag
+        self.og_tag = tag
         if self.spin_polar:
             self.tag = tag + str(self.spin)
 
@@ -622,7 +626,7 @@ class COGITO(object):
                     elapsed_time2 += time2 - time1
                     print("elapsed time for converged orbs:",elapsed_time2)
                     print("")
-                    self.fit_to_atomic_orb(plot_orbs=plot_orbs,orbfactor=orbfactor)
+                    self.fit_to_atomic_orb(plot_orbs=plot_orbs,orbfactor=orbfactor,outer=outer)
                     time3 = time.time()
                     # Calculate elapsed time
                     elapsed_time3 += time3 - time2
@@ -3246,7 +3250,7 @@ class COGITO(object):
         #self.one_orbitalWF = real_orbs
         #self.ex_pseudos = self.recip_to_real(excited_orbs)
 
-    def fit_to_atomic_orb(self,plot_orbs = False,orbfactor=1.0):
+    def fit_to_atomic_orb(self,plot_orbs = False,orbfactor=1.0,outer=0):
         """
         This function is necessary when using reciprocal integrals
         because they need an individual orbital rather than the unk = sum_R(y(r-R)).
@@ -3364,6 +3368,7 @@ class COGITO(object):
         orbgroup_finalgausparams = np.zeros((len(orb_groups),9))
         orbgroup_pseudoparams = np.zeros((len(orb_groups),9))
         orbgroup_expparams = np.zeros((len(orb_groups),7))
+        orbgroup_fancyparams = np.zeros((len(orb_groups),7))
         
         num_loop = 3
         abc = np.linalg.norm(self._a,axis=1)
@@ -3431,13 +3436,13 @@ class COGITO(object):
                 weight_ratio = np.abs(ratio[largeenough][positive])**(1/2)*np.exp(-1/2*np.abs(ratio[largeenough][positive]-1)**3)
                 
                 l=orb_to_l[orbperatom]
-                weights = (1/(good_min_rad+0.001)**(1/2/(l+1)))*weight_ratio*np.abs(angular_part[largeenough][positive])**(1/2)#+radunk*5000
+                weights = (1/(good_min_rad+0.001)**(1/2/2))*weight_ratio*np.abs(angular_part[largeenough][positive])**(1/2)#+radunk*5000
                 orbkey = self.orbtype[orb]
                 no_node = orbkey[0] == orbkey
                                 
                 # randomly select points to fit based on (1-(x/cutoff)^2) to speed up fit and have more even radial distribution of points
                 rand = np.random.rand(len(radunk))
-                func = 1/good_min_rad**(3/2) #(1-(good_min_rad/(self.cutoff_rad[atom]*2))**(2))
+                func = 1/good_min_rad**(2) #(1-(good_min_rad/(self.cutoff_rad[atom]*2))**(2))
                 keep_point = rand<func
                 radunk = radunk[keep_point]
                 good_min_rad = good_min_rad[keep_point]
@@ -3446,7 +3451,7 @@ class COGITO(object):
                 
                 # cutoff after certain large distance
                 # this helps make the fitting scale linearly with the number of atoms rather than supercell size
-                cutoff = self.cutoff_rad[atom]*0.9+np.tanh((self.init_orb_energy[orb]+8)/5)*0.5#self.cutoff_rad[atom]*0.8#**(1/2)#*1.4
+                cutoff = self.cutoff_rad[atom]*0.9+np.tanh((self.init_orb_energy[orb]+8)/5)*0.25#self.cutoff_rad[atom]*0.8#**(1/2)#*1.4
                 #print("new cut:",cutoff,self.init_orb_energy[orb])
                 inside_cut = good_min_rad < 4*cutoff
                 radunk = radunk[inside_cut]
@@ -3480,20 +3485,20 @@ class COGITO(object):
                         
 
                 #append some high rad values to maintain a small tail
-                radunk = np.append(radunk,np.zeros(20))#[0,0,0,0])
-                good_min_rad = np.append(good_min_rad,np.linspace(cutoff+0,cutoff+4,20))#[cutoff+0.5,cutoff+0.9,cutoff+1.4,cutoff+2.5])
+                #radunk = np.append(radunk,np.zeros(20))#[0,0,0,0])
+                #good_min_rad = np.append(good_min_rad,np.linspace(cutoff+0,cutoff+4,20))#[cutoff+0.5,cutoff+0.9,cutoff+1.4,cutoff+2.5])
                     
-                if no_node:
-                    weights = np.append(weights,np.linspace(0,20,20))#[4,8,12,20])
-                else:
-                    weights = np.append(weights,np.linspace(0,20,20))#[4,8,12,20])
+                #if no_node:
+                #    weights = np.append(weights,np.linspace(0,20,20))#[4,8,12,20])
+                #else:
+                #    weights = np.append(weights,np.linspace(0,20,20))#[4,8,12,20])
                 all_radunk[orb] = radunk
                 all_good_min_rad[orb] = good_min_rad
                 all_weights[orb] = weights
                 if not no_node and orbkey[0] == 's':
-                    all_og_orbs[orb] = np.append(og_radunk[positive][keep_point][inside_cut],np.zeros(22))#[0,0,0,0,0,0])
+                    all_og_orbs[orb] = np.append(og_radunk[positive][keep_point][inside_cut],np.zeros(2)) #22 #[0,0,0,0,0,0])
                 else:
-                    all_og_orbs[orb] = np.append(og_radunk[positive][keep_point][inside_cut],np.zeros(20))#[0,0,0,0])
+                    all_og_orbs[orb] = np.append(og_radunk[positive][keep_point][inside_cut],np.zeros(0)) #20 #[0,0,0,0])
                 all_good_ind[orb] = np.arange(len(og_orb))[largeenough][positive][keep_point][inside_cut]
 
             end_time = time.time()
@@ -3532,6 +3537,7 @@ class COGITO(object):
                 max_pos = np.amax(simporb)
                 test_cut_ind = np.argmin(np.abs(simporb[max_pos_ind:]-max_pos/3))
                 test_cutoff = simprad[max_pos_ind:][test_cut_ind]
+                sixth_cutoff = simprad[max_pos_ind:][np.argmin(np.abs(simporb[max_pos_ind:]-max_pos/1.5))]
                 cutoff = self.cutoff_rad[atom]*0.9+np.tanh((self.init_orb_energy[orbgroup[0]]+8)/5)*0.5#self.cutoff_rad[atom]*0.8#**(1/2)#*1.4
                 #print("testing cutoffs:",test_cutoff,cutoff)
                 if test_cutoff > cutoff:
@@ -3555,16 +3561,90 @@ class COGITO(object):
                 if l == 2:
                     min_cut = expcutoff/4
                 l=orb_to_l[orbperatom]
-                x = good_min_rad[good_min_rad<=test_cutoff]
-                y = radunk[good_min_rad<=test_cutoff]
-                               
+                if no_node:
+                    notbad_low = (radunk > 0) | (good_min_rad > test_cutoff) | (good_min_rad < test_cutoff/2) # remove points that are below zero close to the R=0 if no node
+                else:
+                    notbad_low = np.ones(len(radunk), dtype=bool)
+                x = good_min_rad[notbad_low] #[good_min_rad<=test_cutoff]
+                y = radunk[notbad_low] #[good_min_rad<=test_cutoff]
+
                 truemaxval = np.abs(np.average(y[np.abs(x-max_rad) < 0.1/(l+1)]))#,weights = weights[good_min_rad<=cutoff][np.abs(x-max_rad) < 0.1/(l+1)]))
+                other_maxval = np.abs(np.average(np.sort(y[x<max_rad+0.5])[::-1][100:200]))
+                print("possible maxes",truemaxval,other_maxval,max_rad+0.5)
+                if truemaxval < other_maxval:
+                    truemaxval = other_maxval
+                    if truemaxval > 0.002:
+                        truemaxval = 0.002
                 if np.isnan(truemaxval):
                     truemaxval = max_val
+                print("possible maxes",truemaxval,other_maxval)
                 #print("normalizing values:",max_rad,max_val,truemaxval)
                 #print("before norm:",[pa,pc,pe])
                 [pa,pc,pe] = np.array([pa,pc,pe])/max_val*truemaxval
 
+                # try new intermediate fit that has less parameters but is still expressive to improve consistency
+                def fit_variable_func(x, a,b,c,d,e,f,l):
+                    tan_fac = 1
+                    if l==0:
+                        tan_fac = 2
+                    return x**l * (a/b*np.exp(-(x/b)**2)+c/d*np.exp(-x**e/d)*np.tanh((x/f)**tan_fac)) #*(1-np.tanh((x/f)**tan_fac))
+
+                new_fitting_func = partial(fit_variable_func,l=l)
+                test_sixth = self.cutoff_rad[atom] * 0.8 + np.tanh((self.init_orb_energy[orbgroup[0]] + 8) / 5) * 0.4
+                sixth_cutoff = sixth_cutoff*0.8+test_sixth*0.2
+                if sixth_cutoff > test_sixth:
+                    sixth_cutoff = sixth_cutoff*0.25+test_sixth*0.75
+                zero_cutoff = sixth_cutoff*0.9 + 1.1
+                print("test cutoff:",zero_cutoff,test_sixth,sixth_cutoff)
+
+                #x = np.append(x, np.linspace(zero_cutoff+0,zero_cutoff+4,10)) #[zero_cutoff + 2.0, zero_cutoff + 2.5, zero_cutoff + 3.0, zero_cutoff + 3.5,zero_cutoff + 4.0])
+                #y = np.append(y, np.zeros(10))#[0, 0, 0, 0, 0])
+                #vary_wght = np.sum(weights[good_min_rad > zero_cutoff])/(outer+1) # use more for large systems with more points
+                init_weight = weights[notbad_low] #np.append(weights[notbad_low],np.linspace(0,vary_wght,10)) #[vary_wght, vary_wght*4, vary_wght*8,vary_wght*12,vary_wght*16])
+
+                x = np.append(x, [zero_cutoff + .0, zero_cutoff + 0.25, zero_cutoff + 0.5, zero_cutoff + 0.75,zero_cutoff + 1.0,zero_cutoff + 1.25, zero_cutoff + 1.5, zero_cutoff + 1.75,zero_cutoff + 2.0])
+                y = np.append(y, [0, 0, 0, 0, 0,0,0,0,0])
+                high_weight =  np.sum(weights[(good_min_rad > test_sixth*0.5+sixth_cutoff*0.3) & (np.abs(radunk) > truemaxval/4)])
+                low_weights = np.sum(weights[(good_min_rad < zero_cutoff)])# & (good_min_rad > 0.5)])
+                vary_wght =(low_weights)/200/min((outer+1)**(3/2),6) # use more for large systems with more points
+                vary_wght = vary_wght * (0.001/truemaxval)**(1/4) # adjust for if normalization is different (and curve is just naturally lower)
+                init_weight = np.append(init_weight,[vary_wght/2, vary_wght*1, vary_wght*2,vary_wght*4,vary_wght*8,vary_wght*16, vary_wght*24,vary_wght*32,vary_wght*48])
+
+                # just add a couple very far out ones for general use
+                x = np.append(x, [zero_cutoff + 1.5, zero_cutoff + 2.5,zero_cutoff + 3.5,zero_cutoff + 4.5])
+                y = np.append(y, [0, 0, 0, 0])
+                init_weight = np.append(init_weight,
+                                        [low_weights/100,low_weights/10, low_weights*2, low_weights*40])
+
+                # add the psuedo orbital as a loose guide
+                low_weights = np.sum(weights[(good_min_rad < zero_cutoff+3)])# & (good_min_rad > 0.5)])
+                new_rad = np.linspace(0,zero_cutoff+3,100)
+                #new_rad = np.append(new_rad[:15],new_rad)
+                just_one = func_for_rad(new_rad,pa,pb,pc,pd,pe,pf,pg,ph,l=l)
+                pseudo_weights = np.ones(len(new_rad))/1000/(outer+1)**(2)*low_weights  #*np.sum(weights[good_min_rad > 0.1]) #*((num_loop)/(loop+1))**(1/2)
+                pseudo_weights[:15] = pseudo_weights[:15]*2
+                x = np.append(x, new_rad)
+                y = np.append(y, just_one)
+                init_weight = np.append(init_weight,pseudo_weights) # use more for small systems with less points
+
+                sig = 1 / (init_weight + 0.00001)
+
+                pinit = [0.001,expcutoff/2,0.001,expcutoff,1.01,test_cutoff/1.5]
+                max_decay = min(1.02+outer/4,1.5)
+                low_bounds = [-1.0,expcutoff*0.05,0.000001,expcutoff*0.05,1,test_cutoff/(2.)]
+                if no_node:
+                    low_bounds = [0.0, expcutoff * 0.05, 0.000001, expcutoff * 0.05, 1, test_cutoff / (2.)]
+                    high_bounds = [3.0,expcutoff*3,3,expcutoff*3,max_decay,test_cutoff*min(0.7+outer/4,1.2)]
+                else:
+                    low_bounds = [-1.0, expcutoff * 0.05, 0.000001, expcutoff * 0.05, 1, test_cutoff / 10]
+                    high_bounds = [3.0,expcutoff*3,3,expcutoff*3,max_decay, test_cutoff*min(0.7+outer/4,1.2)]
+                popt,pcov = curve_fit(new_fitting_func,x,y,p0=pinit,sigma=sig,bounds=(low_bounds,high_bounds),ftol=0.000001, xtol=0.000001,method="trf",max_nfev=5000)
+                [a_n,b_n,c_n,d_n,e_n,f_n] = popt
+                print("new fit:",popt)
+                orbgroup_fancyparams[group_ind] = [a_n,b_n,c_n,d_n,e_n,f_n,l]
+                orbgroup_pseudoparams[group_ind] = [pa,pb,pc,pd,pe,pf,pg,ph,l]
+
+                '''
                 # try fitting with contraints built into function so can use curve_fit
                 init_con1 = pd/pb #np.log( - 1)
                 init_con4 = 2/3 #np.log(- 1)
@@ -3572,7 +3652,7 @@ class COGITO(object):
                 init_con2 = pe/pf+pa/pb
                 max_aceg = np.amax(np.abs([pa,pc,pe,pg]))
                 if no_node:
-                    gaus_init = [pa,pb,init_con1,init_con2,init_con3]#,pg,init_con4] 
+                    gaus_init = [pa,pb,init_con1,init_con2,init_con3]#,pg,init_con4]
                     partial_gaus_fit = partial(func_for_rad_fit,c=pc,g=0,con4=init_con4, l=l)
                     low_bounds = np.ones(5)*0.000001 #[0,0,0,0,0]
                     high_bounds = [max_aceg*10,new_cutoff*3,0.95,max_aceg*10,0.9]#,max_aceg*20,0.9]
@@ -3653,18 +3733,21 @@ class COGITO(object):
                 orbgroup_gausparams[group_ind] = [a,b,c,d,e,f,g,h,l]
                 orbgroup_pseudoparams[group_ind] = [pa,pb,pc,pd,pe,pf,pg,ph,l]
                 orbgroup_expparams[group_ind] = [a_e,b_e,c_e,d_e,e_e,f_e,l]
+                '''
 
                 # fit to one gaussian first before making new ratio values
-                [a,b,c,d,e,f,g,h,l] = orbgroup_gausparams[group_ind]
-                [a_e,b_e,c_e,d_e,e_e,f_e,l] = orbgroup_expparams[group_ind]
+                #[a,b,c,d,e,f,g,h,l] = orbgroup_gausparams[group_ind]
+                #[a_e,b_e,c_e,d_e,e_e,f_e,l] = orbgroup_expparams[group_ind]
+
+                [a_n,b_n,c_n,d_n,e_n,f_n,l] = orbgroup_fancyparams[group_ind]
                 atom = self.orbatomnum[orbgroup[0]]
                 #cutoff = self.cutoff_rad[atom]*0.8#**(1/2)#*1.4
                 #expcutoff = 1/cutoff
                 # orbital dependant section
                 # now fit to just gaussian functions
                 new_rad = np.linspace(0,(cutoff/2)**(1/2)*5,100)
-                just_one = func_for_rad(new_rad,a,b,c,d,e,f,g,h,l=l)
-                just_one[new_rad>test_cutoff] = func_for_rad_exp(new_rad[new_rad>test_cutoff],a_e,b_e,c_e,d_e,e_e,f_e,l=l)
+                just_one = fit_variable_func(new_rad,a_n,b_n,c_n,d_n,e_n,f_n,l=l)
+                #just_one[new_rad>test_cutoff] = func_for_rad_exp(new_rad[new_rad>test_cutoff],a_e,b_e,c_e,d_e,e_e,f_e,l=l)
     
                 #use the original WF
                 #just_one = self.orig_radial[orbind]
@@ -3796,9 +3879,9 @@ class COGITO(object):
                         tot_orbs[orb] = tot_orbWF
                         hold = tot_orbWF[all_good_ind[orb]]/angular_part[all_good_ind[orb]]
                         if not no_node and orbkey[0] == 's':
-                            reconstruct_rad[orb] = np.append(hold,np.zeros(22))#[0,0,0,0,0,0])
+                            reconstruct_rad[orb] = np.append(hold,np.zeros(2)) #22 #[0,0,0,0,0,0])
                         else:
-                            reconstruct_rad[orb] = np.append(hold,np.zeros(20))#[0,0,0,0])
+                            reconstruct_rad[orb] = np.append(hold,np.zeros(0)) #20 #[0,0,0,0])
                         #get the error
                         unk = centered_orbs[orb].flatten().real
                         diff_orb = np.abs((tot_orbWF - unk))
@@ -3821,6 +3904,7 @@ class COGITO(object):
         for group_ind, orbgroup in enumerate(orb_groups):
             [a,b,c,d,e,f,g,h,l] = orbgroup_gausparams[group_ind]
             [a_e,b_e,c_e,d_e,e_e,f_e,l] = orbgroup_expparams[group_ind]
+            [a_n,b_n,c_n,d_n,e_n,f_n,l] = orbgroup_fancyparams[group_ind]
             [r_a,r_b,r_c,r_d,r_e,r_f,r_g,r_h,l] = orbgroup_finalgausparams[group_ind]
             atom = self.orbatomnum[orbgroup[0]]
             cutoff = self.cutoff_rad[atom]*0.9+np.tanh((self.init_orb_energy[orbgroup[0]]+8)/5)*0.5#self.cutoff_rad[atom]*0.8#**(1/2)#*1.4
@@ -3978,11 +4062,12 @@ class COGITO(object):
                 [nx,ny,nz] = self.gridxyz
                 ax.plot(new_rad,self.orig_radial[orbgroup[0]],color="black",linewidth=2.5,label="Pseudo orbital")
                 #plt.scatter(min_rad[big_ang],test_new[big_ang],facecolors="None",edgecolors="red")
-                just_one = func_for_rad(new_rad,a,b,c,d,e,f,g,h,l=l)
-                just_one[new_rad>cutoff] = func_for_rad_exp(new_rad[new_rad>cutoff],a_e,b_e,c_e,d_e,e_e,f_e,l=l)
+                just_one = fit_variable_func(new_rad, a_n, b_n, c_n, d_n, e_n, f_n, l=l)
+                #just_one = func_for_rad(new_rad,a,b,c,d,e,f,g,h,l=l)
+                #just_one[new_rad>cutoff] = func_for_rad_exp(new_rad[new_rad>cutoff],a_e,b_e,c_e,d_e,e_e,f_e,l=l)
                 #plt.ylim((0,0.0005))
                 ax.set_xlim((0,5))
-                ax.plot(new_rad,just_one,color="purple",linewidth=2.5,label="Gauss+exp fit")#c=c,d=d,*popt
+                ax.plot(new_rad,just_one,color="purple",linewidth=2.5,label="intermediate fit")#c=c,d=d,*popt
 
                 [pa,pb,pc,pd,pe,pf,pg,ph,l] = orbgroup_pseudoparams[group_ind]
                 new_rad = np.linspace(0,8,100)
@@ -4693,9 +4778,9 @@ class COGITO(object):
         error_file.write("average orbital mixing: "+ str(np.around(np.sum(max_orbmixing*self.kpt_weights)*100,decimals=2))+"%\n")
         error_file.write("max orbital mixing: "+ str(np.around(np.amax(max_orbmixing)*100,decimals=2))+"%\n")
 
-        error_file.write("If all bands are used:"+"%\n")
+        error_file.write("If all bands are used:"+"\n")
         error_file.write("all bands avg orbmix: "+ str(np.around(np.sum(max_orbmixing_allbands*self.kpt_weights)*100,decimals=2))+"%\n")
-        error_file.write("all abnds max orbmix: "+ str(np.around(np.amax(max_orbmixing_allbands)*100,decimals=2))+"%\n")
+        error_file.write("all bands max orbmix: "+ str(np.around(np.amax(max_orbmixing_allbands)*100,decimals=2))+"%\n")
         #wannier_hr.write(str(int(max1/2))+" "+str(int(max2/2))+" "+str(int(max3/2))+" "+str(self.num_orbs)+"\n")
         self.max_orb_mixing = max_orbmixing
         self.max_band_spilling = max_charge_spill
@@ -7348,7 +7433,7 @@ class COGITO(object):
         self.real_orbcoeffs = orbital_coeffs
         self.recip_orbcoeffs = recip_orbcoeffs
 
-    def get_TBparameter(self,num_trans = 5):
+    def get_TBparameter(self,file_type:str="npy"):
         #print("I hope that you have provided a WAVECAR with uniform sampling and no symmetry!")
         # generate the correct amount of trans based on kpoints
         kprim1 = np.sort(np.around(np.abs(self.kpoints[:,0]),decimals=6))
@@ -7408,7 +7493,7 @@ class COGITO(object):
         #print("test params:",overlaps[1,1,1])#,tb_param[1,1,1][:5],tb_param[1,1,1][21:])
         self.tb_param = tb_param
         self.overlaps = overlaps
-        self.write_TBfiles()
+        self.write_TBfiles(file_type)
         
     def get_interp_ham(self,kind,return_truevec = True,return_params=False):
         # kind - int: the index of the kpoint
@@ -7596,7 +7681,7 @@ class COGITO(object):
         print("final offset:",energysum/overlapsum)
         '''
 
-    def write_TBfiles(self):
+    def write_TBfiles(self,file_type:str="npy"):
         # get the maximum interatomic distance
         
         kprim1 = np.sort(np.around(np.abs(self.kpoints[:,0]),decimals=6))
@@ -7606,52 +7691,87 @@ class COGITO(object):
         max2 = np.around(1/kprim2[kprim2 != 0][0],decimals=0) if len(kprim2[kprim2 != 0]) > 0 else 1 
         max3 = np.around(1/kprim3[kprim3 != 0][0],decimals=0) if len(kprim3[kprim3 != 0]) > 0 else 1 
         print("cutoff for params!",max1,max2,max3)
-        
-        #write the TB parameters
-        wannier_hr = open(self.directory+"TBparams"+self.tag+".txt", "w")
-        wannier_hr.write("File generated by COGITO\n")
         num_trans = np.array(self.num_trans)
         num_each_dir = np.floor(num_trans/2)
-        wannier_hr.write(str(int(max1/2))+" "+str(int(max2/2))+" "+str(int(max3/2))+" "+str(self.num_orbs)+"\n")
 
-        wannier_hr.write("start params\n")
-        for a1 in range(num_trans[0]):
-            trans1 = int(a1 - np.floor(num_trans[0]/2))
-            for a2 in range(num_trans[1]):
-                trans2 = int(a2 - np.floor(num_trans[1] / 2))
-                for a3 in range(num_trans[2]):
-                    trans3 = int(a3 - np.floor(num_trans[2] / 2))
-                    for orb1 in range(self.num_orbs):
-                        for orb2 in range(self.num_orbs):
-                            orb_dist = np.array([trans1,trans2,trans3]) + self.orbpos[orb2] - self.orbpos[orb1]
-                            if abs(orb_dist[0]) <= max1/2 and abs(orb_dist[1]) <= max2/2 and abs(orb_dist[2]) <= max3/2:
-                                realpart = f"{self.tb_param[a1,a2,a3,orb1,orb2].real:.12f}"
-                                imagpart = f"{self.tb_param[a1,a2,a3,orb1,orb2].imag:.12f}"
-                                wannier_hr.write(
-                                    '{:>5} {:>5} {:>5} {:>5} {:>5} {:>14} {:>14}'.format(str(trans1), str(trans2), str(trans3),
-                                                                             str(orb1+1), str(orb2+1),realpart, imagpart) + "\n")
+        #write the TB parameters
+        if file_type == "npy":
+            tb_to_save = np.transpose(self.tb_param,(3,4,0,1,2))
+            # set interactions outside the cutoff to zero
+
+            for a1 in range(num_trans[0]):
+                trans1 = int(a1 - np.floor(num_trans[0] / 2))
+                for a2 in range(num_trans[1]):
+                    trans2 = int(a2 - np.floor(num_trans[1] / 2))
+                    for a3 in range(num_trans[2]):
+                        trans3 = int(a3 - np.floor(num_trans[2] / 2))
+                        for orb1 in range(self.num_orbs):
+                            orb_dist = np.array([trans1, trans2, trans3])[:,None] + self.orbpos.T - self.orbpos[orb1][:,None]
+                            outside = (abs(orb_dist[0]) > max1/2) | (abs(orb_dist[1]) > max2/2) | (abs(orb_dist[2]) > max3/2)
+                            tb_to_save[orb1,outside,a1,a2,a3] = 0
+
+            np.save(self.directory+"TBparams"+self.tag,tb_to_save)
+        else:
+            wannier_hr = open(self.directory+"TBparams"+self.tag+".txt", "w")
+            wannier_hr.write("File generated by COGITO\n")
+            wannier_hr.write(str(int(max1/2))+" "+str(int(max2/2))+" "+str(int(max3/2))+" "+str(self.num_orbs)+"\n")
+
+            wannier_hr.write("start params\n")
+            for a1 in range(num_trans[0]):
+                trans1 = int(a1 - np.floor(num_trans[0]/2))
+                for a2 in range(num_trans[1]):
+                    trans2 = int(a2 - np.floor(num_trans[1] / 2))
+                    for a3 in range(num_trans[2]):
+                        trans3 = int(a3 - np.floor(num_trans[2] / 2))
+                        for orb1 in range(self.num_orbs):
+                            for orb2 in range(self.num_orbs):
+                                orb_dist = np.array([trans1,trans2,trans3]) + self.orbpos[orb2] - self.orbpos[orb1]
+                                if abs(orb_dist[0]) <= max1/2 and abs(orb_dist[1]) <= max2/2 and abs(orb_dist[2]) <= max3/2:
+                                    realpart = f"{self.tb_param[a1,a2,a3,orb1,orb2].real:.12f}"
+                                    imagpart = f"{self.tb_param[a1,a2,a3,orb1,orb2].imag:.12f}"
+                                    wannier_hr.write(
+                                        '{:>5} {:>5} {:>5} {:>5} {:>5} {:>14} {:>14}'.format(str(trans1), str(trans2), str(trans3),
+                                                                                 str(orb1+1), str(orb2+1),realpart, imagpart) + "\n")
         #write the overlap parameters
-        wannier_hr = open(self.directory+"overlaps"+self.tag+".txt", "w")
-        wannier_hr.write("File generated by COGITO\n")
-        wannier_hr.write(str(int(max1/2))+" "+str(int(max2/2))+" "+str(int(max3/2))+" "+str(self.num_orbs)+"\n")
-        num_trans = self.num_trans
 
-        wannier_hr.write("start params\n")
-        for a1 in range(num_trans[0]):
-            trans1 = int(a1 - np.floor(num_trans[0]/2))
-            for a2 in range(num_trans[1]):
-                trans2 = int(a2 - np.floor(num_trans[1] / 2))
-                for a3 in range(num_trans[2]):
-                    trans3 = int(a3 - np.floor(num_trans[2] / 2))
-                    for orb1 in range(self.num_orbs):
-                        for orb2 in range(self.num_orbs):
-                            orb_dist = np.array(np.array([trans1,trans2,trans3]) + self.orbpos[orb2] - self.orbpos[orb1])
-                            if abs(orb_dist[0]) <= max1/2 and abs(orb_dist[1]) <= max2/2 and abs(orb_dist[2]) <= max3/2:
-                                realpart = f"{self.overlaps[a1,a2,a3,orb1,orb2].real:.12f}"
-                                imagpart = f"{self.overlaps[a1,a2,a3,orb1,orb2].imag:.12f}"
-                                wannier_hr.write(
-                                    '{:>5} {:>5} {:>5} {:>5} {:>5} {:>14} {:>14}'.format(str(trans1), str(trans2), str(trans3),
-                                                                             str(orb1+1), str(orb2+1),realpart, imagpart) + "\n")
+        if file_type == "npy":
+            over_to_save = np.transpose(self.overlaps,(3,4,0,1,2))
+            # set interactions outside the cutoff to zero
+
+            for a1 in range(num_trans[0]):
+                trans1 = int(a1 - np.floor(num_trans[0] / 2))
+                for a2 in range(num_trans[1]):
+                    trans2 = int(a2 - np.floor(num_trans[1] / 2))
+                    for a3 in range(num_trans[2]):
+                        trans3 = int(a3 - np.floor(num_trans[2] / 2))
+                        for orb1 in range(self.num_orbs):
+                            orb_dist = np.array([trans1, trans2, trans3])[:,None] + self.orbpos.T - self.orbpos[orb1][:,None]
+                            outside = (abs(orb_dist[0]) > max1/2) | (abs(orb_dist[1]) > max2/2) | (abs(orb_dist[2]) > max3/2)
+                            over_to_save[orb1,outside,a1,a2,a3] = 0
+
+            np.save(self.directory+"overlaps"+self.tag,over_to_save)
+
+        else:
+            wannier_hr = open(self.directory+"overlaps"+self.tag+".txt", "w")
+            wannier_hr.write("File generated by COGITO\n")
+            wannier_hr.write(str(int(max1/2))+" "+str(int(max2/2))+" "+str(int(max3/2))+" "+str(self.num_orbs)+"\n")
+
+            wannier_hr.write("start params\n")
+            for a1 in range(num_trans[0]):
+                trans1 = int(a1 - np.floor(num_trans[0]/2))
+                for a2 in range(num_trans[1]):
+                    trans2 = int(a2 - np.floor(num_trans[1] / 2))
+                    for a3 in range(num_trans[2]):
+                        trans3 = int(a3 - np.floor(num_trans[2] / 2))
+                        for orb1 in range(self.num_orbs):
+                            for orb2 in range(self.num_orbs):
+                                orb_dist = np.array(np.array([trans1,trans2,trans3]) + self.orbpos[orb2] - self.orbpos[orb1])
+                                if abs(orb_dist[0]) <= max1/2 and abs(orb_dist[1]) <= max2/2 and abs(orb_dist[2]) <= max3/2:
+                                    realpart = f"{self.overlaps[a1,a2,a3,orb1,orb2].real:.12f}"
+                                    imagpart = f"{self.overlaps[a1,a2,a3,orb1,orb2].imag:.12f}"
+                                    wannier_hr.write(
+                                        '{:>5} {:>5} {:>5} {:>5} {:>5} {:>14} {:>14}'.format(str(trans1), str(trans2), str(trans3),
+                                                                                 str(orb1+1), str(orb2+1),realpart, imagpart) + "\n")
 
     def write_recip_rad_orbs(self):
         recip_coeff = self.recip_orbcoeffs #[orb,9]
@@ -7749,7 +7869,7 @@ class COGITO(object):
     def write_input_file(self):
         # writes necessary information to file
         # includes: lattice vectors, atom type and position, orbital position and corresponding atom
-        file = open(self.directory+"tb_input"+self.tag+".txt","w")
+        file = open(self.directory+"tb_input"+self.og_tag+".txt","w")
         file.write("lattice_vecs\n")
         a = self._a
         file.write('{:>14} {:>14} {:>14}'.format(f"{a[0][0]:.8f}", f"{a[0][1]:.8f}", f"{a[0][2]:.8f}") + "\n")
@@ -8697,7 +8817,7 @@ class Tee: # just to print to terminal and save output to file
             s.flush()
 
 def run_cogito(directory,save_metadata:bool=True, invariant=True, irreducible_grid=True, verbose=0, tag="", include_excited=1, calc_nrms=False, save_orb_converg_info:bool=True,
-                         orbfactor=1.0, num_steps=50, num_outer=3, plot_orbs = False,
+                         orbfactor=1.0, num_steps=50, num_outer=4, plot_orbs = False,
                          min_proj=0.01, band_opt=True,orb_opt=True,orb_orth=False,start_from_orbnpy = False,plot_projBS = False,plot_projDOS=False,orbs = None,save_orb_data=False,save_orb_figs=False,minimum_orb_energy: float=-60,min_duplicate_energy:float=-60):
     '''
     Runs COGITO. See generate_TBmodel() for a description of all the other arguments.
@@ -8811,7 +8931,7 @@ def main(argv=None):
     cogito_args.add_argument("--no_save_converg",help="If called, does not save statistics on the orbital convergence to orb_converg_info.json.",action='store_true') # not #
     cogito_args.add_argument("--orbfactor",type=float,help="The amount to scale the initial orbital basis by.",default=1.0)
     cogito_args.add_argument("--num_steps",type=int,help="Maximum number of steps in the first convergence section, which finds numerical Bloch orbitals.",default=50)
-    cogito_args.add_argument("--num_outer",type=int,help="Number of steps in the full convergence loop. Do not exceed 10.",default=3)
+    cogito_args.add_argument("--num_outer",type=int,help="Number of steps in the full convergence loop. Do not exceed 10.",default=4)
     cogito_args.add_argument("--plot_orbs",help="If called, does plt.show() for COGITO radial fitting plots.",action='store_true') #
     cogito_args.add_argument("--no_band_opt",help="If called, does not to apply Lowdin+Gram+extras band optimization scheme for improved TB interpolation (scheme improves band error from ~40meV to ~2meV).",action='store_true') #not #
     cogito_args.add_argument("--no_orb_opt",help="If called, does not enforce zero orbital mixing for improved TB interpolation.",action='store_true') # not #
