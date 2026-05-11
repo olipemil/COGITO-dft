@@ -7443,7 +7443,7 @@ class COGITO(object):
         trans2 = int(np.around(1/kprim2[kprim2 != 0][0],decimals=0)) if len(kprim2[kprim2 != 0]) > 0 else 1 
         trans3 = int(np.around(1/kprim3[kprim3 != 0][0],decimals=0)) if len(kprim3[kprim3 != 0]) > 0 else 1 
 
-        num_each_dir = np.array(np.floor((np.array([trans1,trans2,trans3]))/2), dtype=np.int_)
+        num_each_dir = np.array(np.ceil((np.array([trans1,trans2,trans3]))/2), dtype=np.int_)
         self.num_trans = num_each_dir*2+1
         [trans1,trans2,trans3] = self.num_trans
         print("kpoint grid, now numtrans:",self.num_trans)
