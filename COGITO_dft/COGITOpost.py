@@ -1528,8 +1528,7 @@ class COGITO_TB_Model(object):
     @staticmethod
     def get_point_data(self,kind,bnd,spin: int = 0,normalize:bool=False) -> npt.NDArray:
         """
-        Generates an COHP/COOP/bond_occup matrices with same dimension as TB parameters (orb1,orb2,T1,T2,T3) for one specific band and kpoint.
-        Then stores the data in dictionaries and saves to json files in the same format as the jsonify_bond_data for integrated quantities.
+        Generates an COHP/COOP/bond_occup matrices with same dimension as TB parameters (orb1,orb2,T1,T2,T3) for one specific band, kpoint, and spin.
         """
         icohp = np.zeros((self.num_orbs,self.num_orbs,self.num_trans[0],self.num_trans[1],self.num_trans[2]), dtype=np.complex128)  # kpts,bands
         icohp_norm = np.zeros((self.num_orbs,self.num_orbs,self.num_trans[0],self.num_trans[1],self.num_trans[2]), dtype=np.complex128)
@@ -8060,26 +8059,8 @@ def _cart_to_red(tmp,cart):
 
 def analyze_bandgap(self, minimum_cohp: float = 0.001,make_bond_info_txt=False):
     """
-    This function covers the raw ICOHP and ICOOP and bond_occup matrices into something more interpretable while still preserving norms.
-    This constructs three json files:
-    all_bonds.json : includes bonds between all atoms that have a elements above the minimum_cohp.
-    all_unique_bonds : groups the all_bonds into unique ones for more interpretable viewing.
-    all_atoms.json : all onsite atom information, including the bond orb_orb_dict + added onsite and mulliken orbital occupations and partial charges + lone-pair-like energy (cohp) contributions.
-    The structure of the all_bonds json:
-    {"uniq_bonds by "el1_el2_dist_energy": {
-    "bondlength": float, "degeneracy": int, "cohp": float , "coop": float, "bondmagmom": float,
-    "all atom-atom bonds in this set by 'atm1_atm2_T1_T2_T3':{  # just 'atm1_atm2' is not enough since atoms can bond outside unit cell
-    "atmorbs1, atmorbs2": [[int...],[int...]] # used to reference orbital energy, radius, and shape
-    "cohp": [float...] , "coop": [float...], "bondlength": float, "bondmagmom": float, "angle"?:float,  # same data just without averaging
-    "orb-orb e.g. 's-d'": {
-    "cohp": [float...], "coop": [float...], # is referenced to spin state. For non spin-polarized: [float], for spin-polar: [float,float]
-    "orbnums1, orbnums2": [[int...],[int...]] for orbital numbers e.g. for s-p: [[0],[1,2,3]],  # orbital number referenced to atom already selected
-    "bond_occup_matrix": [numorbs1×numorbs2...], "orb_ediff_matrix": [numorbs1×numorbs2...],
-    "cohp_matrix": [numorbs1×numorbs2...], "coop_matrix": [numorbs1×numorbs2...],
-    "S_matrix": [numorbs1×numorbs2...], "H_matrix": [numorbs1×numorbs2...],
-    }
-    }
-    }
+    This function finds the VBM and CBM points and obtains the 5D (orb1,orb2,T1,T2,T3) COHP, COOP, and bond_occup matrices for these points.
+    Then it saves the data into dictionaries and json files in the same format as jsonify_bonddata() does for the integrated matrices.
     @return:
     """
 
