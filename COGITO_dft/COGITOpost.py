@@ -1262,7 +1262,7 @@ class COGITO_TB_Model(object):
         return band_dist, max_error, band_error
 
     @staticmethod
-    def get_COHP(self: object, orbs: dict, NN: int=None, include_onsite: bool=False,spin: int = 0) -> npt.NDArray:
+    def get_COHP(self: object, orbs: dict, NN: int=None, include_onsite: bool=False,spin: int = 0,normalize:bool=False) -> npt.NDArray:
         """
         Calculates the COHP for the given orbitals and nearest neighbors.
 
@@ -1356,6 +1356,9 @@ class COGITO_TB_Model(object):
         # print(in_full)
         full_ind = [full_indices[0][in_full], full_indices[1][in_full], full_indices[2][in_full],
                     full_indices[3][in_full], full_indices[4][in_full]]
+
+        is_onsite = (full_ind[0] == full_ind[1]) & (full_ind[2] == num_each_dir[0]) & (full_ind[3] == num_each_dir[1]) & (
+                    full_ind[4] == num_each_dir[2])
         if self.verbose > 0:
             print("num of params:", len(full_ind[0]))
 
@@ -1365,6 +1368,7 @@ class COGITO_TB_Model(object):
         # get it from TB params so have all except orbital energies
         vecs = np.array(self.vec_to_trans)
         orb_pos = np.array(self.orb_redcoords)
+        num_each = self.num_each_dir
 
         for kind in range(self.num_kpts):
             kpoint = self.kpoints[kind]
@@ -1379,23 +1383,72 @@ class COGITO_TB_Model(object):
             energyCont = ham[None,:,:]*np.conj(coeff[:,:,None])*coeff[:,None,:] # [band,orb1,orb2]
             cohp[kind] = np.sum(energyCont,axis=(1,2)) * self.kpt_weights[kind]
             '''
-            # now only use the indices that are short
-            vec_to_orbs = vecs[full_ind[2], full_ind[3], full_ind[4]] + orb_pos[full_ind[1]] - orb_pos[full_ind[0]]
-            exp_fac = np.exp(2j * np.pi * np.matmul(vec_to_orbs,kpoint))
-            scaledTB = self.TB_params[spin][full_ind[0], full_ind[1], full_ind[2], full_ind[3], full_ind[4]] * exp_fac
-            # scaledOvlap = self.overlaps_params[full_ind[0],full_ind[1],full_ind[2],full_ind[3],full_ind[4]]*exp_fac
             coeff = self.eigvecs[spin][kind, :self.num_orbs].T  # [band, orb]
             # coeff = np.transpose(coeff,axes = (0,2,1))
-            energyCont = scaledTB[None, :] * np.conj(coeff)[:, full_ind[0]] * coeff[:, full_ind[1]]
-            partial_enCont = energyCont
-            cohp[kind] = np.sum(partial_enCont, axis=1) * self.kpt_weights[kind]
-            #print(kind, cohp[kind])
-            #print(self.eigvals[kind])
+            if normalize:
+                # find the onsite normalization and delta
+                vec_to_orbs = vecs[None,None,:,:,:]  + orb_pos[None,:,None,None,None] - orb_pos[:,None,None,None,None]
+                full_fac = np.exp(2j * np.pi * np.matvec(vec_to_orbs,kpoint))
+                #print(full_fac.shape)
+                part_overs = self.overlaps_params[spin]*full_fac
+                zero_ov = part_overs[:,:,num_each[0],num_each[1],num_each[2]]
+                np.fill_diagonal(zero_ov, 0)
+                part_overs[:,:,num_each[0],num_each[1],num_each[2]]=zero_ov
+                orb_part_overs = np.sum(np.abs(part_overs),axis=(2,3,4))
+                # only do some of the bands for speed
+                ylim = [-5,5]
+                include_band = (self.eigvals[spin][kind, :] < self.efermi + self.energy_shift+ylim[1]) & (self.eigvals[spin][kind, :] > self.efermi + self.energy_shift+ylim[0])
+                #for bnd in range(len(coeff)): # don't want to break mem
+                new_norm = np.sum(np.conj(coeff[include_band])*coeff[include_band],axis=1) # only correct if normalize_params() has been run
+                #print("band new norm:",new_norm)
+                diff_coeff = (1 - 1/new_norm)
+                #print(diff_coeff)
+                full_overs = orb_part_overs[None,:,:]*np.abs(np.conj(coeff[include_band,:,None])*coeff[include_band,None,:])
+                #full_overs = np.abs(full_overs)
+                offsite_norm = np.sum(full_overs,axis=(2)) # [band,orb]
+                full_overs = (part_overs[full_ind[0], full_ind[1], full_ind[2], full_ind[3], full_ind[4]][None,:]*
+                              np.conj(coeff[include_band][:,full_ind[0]])*coeff[include_band][:,full_ind[1]])
+                full_overs = np.abs(full_overs)
+                offsite_percent1 = full_overs/offsite_norm[:,full_ind[0]]
+                offsite_percent2 = full_overs/offsite_norm[:,full_ind[1]]
+                #fin_over = self.overlaps_params[spin]*full_fac*np.conj(coeff[bnd,:,None,None,None,None])*coeff[bnd,None,:,None,None,None]
+                #onsite_over = np.diag(fin_over[:,:,num_each[0],num_each[1],num_each[2]])
+                #fin_over = fin_over + 1/2*onsite_over[:,None,None,None,None]*diff_coeff*offsite_percent1 + 1/2*onsite_over[None,:,None,None,None]*diff_coeff*offsite_percent2
+
+                fin_ham = (self.TB_params[spin][full_ind[0], full_ind[1], full_ind[2], full_ind[3], full_ind[4]][None,:]*
+                           full_fac[full_ind[0], full_ind[1], full_ind[2], full_ind[3], full_ind[4]][None,:]*
+                           np.conj(coeff[include_band][:,full_ind[0]])*coeff[include_band][:,full_ind[1]])
+                onsite_ham = (self.TB_params[spin][np.arange(self.num_orbs), np.arange(self.num_orbs), num_each[0],num_each[1],num_each[2]][None,:]*
+                           full_fac[np.arange(self.num_orbs), np.arange(self.num_orbs), num_each[0],num_each[1],num_each[2]][None,:]*
+                           np.conj(coeff[include_band][:,np.arange(self.num_orbs)])*coeff[include_band][:,np.arange(self.num_orbs)])
+                #print(onsite_ham)
+                fin_ham = fin_ham + 1/2*onsite_ham[:,full_ind[0]]*diff_coeff[:,None]*offsite_percent1 + 1/2*onsite_ham[:,full_ind[1]]*diff_coeff[:,None]*offsite_percent2
+                onsite_ham = onsite_ham - diff_coeff[:,None]*onsite_ham
+                #print(onsite_ham)
+                #zero_ham = fin_ham[:,:,num_each[0],num_each[1],num_each[2]]
+                #print(zero_ham)
+                #np.fill_diagonal(zero_ham,onsite_ham)
+                #print(zero_ham)
+                fin_ham[:,is_onsite]=onsite_ham[:,full_ind[0][is_onsite]]
+
+                cohp[kind][include_band] = np.sum(fin_ham,axis=1) * self.kpt_weights[kind]
+            else: # faster
+                # now only use the indices that are short
+                vec_to_orbs = vecs[full_ind[2], full_ind[3], full_ind[4]] + orb_pos[full_ind[1]] - orb_pos[full_ind[0]]
+                exp_fac = np.exp(2j * np.pi * np.matmul(vec_to_orbs, kpoint))
+                scaledTB = self.TB_params[spin][
+                               full_ind[0], full_ind[1], full_ind[2], full_ind[3], full_ind[4]] * exp_fac
+                # scaledOvlap = self.overlaps_params[full_ind[0],full_ind[1],full_ind[2],full_ind[3],full_ind[4]]*exp_fac
+                energyCont = scaledTB[None, :] * np.conj(coeff)[:, full_ind[0]] * coeff[:, full_ind[1]]
+                partial_enCont = energyCont
+                cohp[kind] = np.sum(partial_enCont, axis=1) * self.kpt_weights[kind]
+                #print(kind, cohp[kind])
+                #print(self.eigvals[kind])
 
         return cohp.real # should be real already but stored in complex array
 
     @staticmethod
-    def get_ICOHP(self,spin: int = 0) -> npt.NDArray:
+    def get_ICOHP(self,spin: int = 0,normalize:bool=False) -> npt.NDArray:
         """
         Generates an ICOHP matrix with same dimension as TB parameters (orb1,orb2,T1,T2,T3). Used for fast calculation of energies in crystal bond plot or other integrated energy quantities.
         """
@@ -1404,31 +1457,145 @@ class COGITO_TB_Model(object):
         # get it from TB params so have all except orbital energies
         vecs = np.array(self.vec_to_trans)
         orb_pos = np.array(self.orb_redcoords)
+        num_each = self.num_each_dir
 
         for kind in range(self.num_kpts):
             kpoint = self.kpoints[kind]
-
-            # use all the parameters (much slower)
-            exp_fac = np.exp(2j*np.pi*np.dot(kpoint,self.flat_vec_to_orbs))
-            #if self.set_min == True:
-            #    exp_fac[self.dist_to_orbs > self.min_hopping_dist] = 0
-            exp_fac = np.reshape(exp_fac,(self.num_orbs,self.num_orbs,self.num_trans[0],self.num_trans[1],self.num_trans[2]))
-            ham = self.TB_params[spin]*exp_fac #np.sum(,axis=(2,3,4)) # [orb1,orb2]
-
             coeff = self.eigvecs[spin][kind, :self.num_orbs].T  # [band, orb]
-            include_band = self.eigvals[spin][kind, :].flatten() < self.efermi + self.energy_shift
-            count = np.zeros(self.num_orbs)
-            count[include_band] = 1
-            mult_coeff = np.conj(coeff)[:, :, None] * coeff[:, None, :] * count[:, None, None]  # band,orb1,orb2
-            sum_coeff = np.sum(mult_coeff, axis=0)
 
-            energyCont = ham * sum_coeff[:, :, None, None, None]
+            if normalize:
+                # find the onsite normalization and delta
+                vec_to_orbs = vecs[None,None,:,:,:]  + orb_pos[None,:,None,None,None] - orb_pos[:,None,None,None,None]
+                full_fac = np.exp(2j * np.pi * np.matvec(vec_to_orbs,kpoint))
+                #print(full_fac.shape)
+                part_overs = self.overlaps_params[spin]*full_fac
+                zero_ov = part_overs[:,:,num_each[0],num_each[1],num_each[2]]
+                np.fill_diagonal(zero_ov, 0)
+                part_overs[:,:,num_each[0],num_each[1],num_each[2]]=zero_ov
+                orb_part_overs = np.sum(np.abs(part_overs),axis=(2,3,4))
+                for bnd in range(len(coeff)): # don't want to break mem
+                    if self.eigvals[spin][kind, bnd] < self.efermi + self.energy_shift:
+                        new_norm = np.sum(np.conj(coeff[bnd])*coeff[bnd]) # only correct if normalize_params() has been run
+                        #print("band new norm:",new_norm)
+                        diff_coeff = (1 - 1/new_norm)
+                        #print(diff_coeff)
+                        full_overs = orb_part_overs*np.abs(np.conj(coeff[bnd,:,None])*coeff[bnd,None,:])
+                        #full_overs = np.abs(full_overs)
+                        offsite_norm = np.sum(full_overs,axis=(1))
+                        full_overs = np.abs(part_overs*np.conj(coeff[bnd,:,None,None,None,None])*coeff[bnd,None,:,None,None,None])
+                        #print(offsite_norm)
+                        offsite_percent1 = full_overs/offsite_norm[:,None,None,None,None]
+                        offsite_percent2 = full_overs/offsite_norm[None,:,None,None,None]
+                        #fin_over = self.overlaps_params[spin]*full_fac*np.conj(coeff[bnd,:,None,None,None,None])*coeff[bnd,None,:,None,None,None]
+                        #onsite_over = np.diag(fin_over[:,:,num_each[0],num_each[1],num_each[2]])
+                        #fin_over = fin_over + 1/2*onsite_over[:,None,None,None,None]*diff_coeff*offsite_percent1 + 1/2*onsite_over[None,:,None,None,None]*diff_coeff*offsite_percent2
 
-            #coeff = self.eigvecs[spin][kind,:self.num_orbs].T #[band, orb]
-            #energyCont = ham[None,:,:,:,:,:]*np.conj(coeff[:,:,None,None,None,None])*coeff[:,None,:,None,None,None] # [band,orb1,orb2,tran1,tran2,tran3]
-            icohp += energyCont * self.kpt_weights[kind] #np.sum(,axis=(0))  #[orb1,orb2,tran1,tran2,tran3]
+                        fin_ham = self.TB_params[spin]*full_fac*np.conj(coeff[bnd,:,None,None,None,None])*coeff[bnd,None,:,None,None,None]
+                        onsite_ham = np.diag(fin_ham[:,:,num_each[0],num_each[1],num_each[2]])
+                        #print(onsite_ham)
+                        fin_ham = fin_ham + 1/2*onsite_ham[:,None,None,None,None]*diff_coeff*offsite_percent1 + 1/2*onsite_ham[None,:,None,None,None]*diff_coeff*offsite_percent2
+                        onsite_ham = onsite_ham - diff_coeff*onsite_ham
+                        #print(onsite_ham)
+                        zero_ham = fin_ham[:,:,num_each[0],num_each[1],num_each[2]]
+                        #print(zero_ham)
+                        np.fill_diagonal(zero_ham,onsite_ham)
+                        #print(zero_ham)
+                        fin_ham[:,:,num_each[0],num_each[1],num_each[2]]=zero_ham
+                        icohp += fin_ham * self.kpt_weights[kind]
+
+            else:
+                # use all the parameters (much slower)
+                exp_fac = np.exp(2j*np.pi*np.dot(kpoint,self.flat_vec_to_orbs))
+                #if self.set_min == True:
+                #    exp_fac[self.dist_to_orbs > self.min_hopping_dist] = 0
+                exp_fac = np.reshape(exp_fac,(self.num_orbs,self.num_orbs,self.num_trans[0],self.num_trans[1],self.num_trans[2]))
+                ham = self.TB_params[spin]*exp_fac #np.sum(,axis=(2,3,4)) # [orb1,orb2]
+
+                include_band = self.eigvals[spin][kind, :].flatten() < self.efermi + self.energy_shift
+                count = np.zeros(self.num_orbs)
+                count[include_band] = 1
+                mult_coeff = np.conj(coeff)[:, :, None] * coeff[:, None, :] * count[:, None, None]  # band,orb1,orb2
+                sum_coeff = np.sum(mult_coeff, axis=0)
+
+                energyCont = ham * sum_coeff[:, :, None, None, None]
+
+                #coeff = self.eigvecs[spin][kind,:self.num_orbs].T #[band, orb]
+                #energyCont = ham[None,:,:,:,:,:]*np.conj(coeff[:,:,None,None,None,None])*coeff[:,None,:,None,None,None] # [band,orb1,orb2,tran1,tran2,tran3]
+                icohp += energyCont * self.kpt_weights[kind] #np.sum(,axis=(0))  #[orb1,orb2,tran1,tran2,tran3]
 
         return icohp
+
+    @staticmethod
+    def get_point_data(self,kind,bnd,spin: int = 0,normalize:bool=False) -> npt.NDArray:
+        """
+        Generates an COHP/COOP/bond_occup matrices with same dimension as TB parameters (orb1,orb2,T1,T2,T3) for one specific band and kpoint.
+        Then stores the data in dictionaries and saves to json files in the same format as the jsonify_bond_data for integrated quantities.
+        """
+        icohp = np.zeros((self.num_orbs,self.num_orbs,self.num_trans[0],self.num_trans[1],self.num_trans[2]), dtype=np.complex128)  # kpts,bands
+        icohp_norm = np.zeros((self.num_orbs,self.num_orbs,self.num_trans[0],self.num_trans[1],self.num_trans[2]), dtype=np.complex128)
+        icoop = np.zeros((self.num_orbs,self.num_orbs,self.num_trans[0],self.num_trans[1],self.num_trans[2]), dtype=np.complex128)
+
+        # get it from TB params so have all except orbital energies
+        vecs = np.array(self.vec_to_trans)
+        orb_pos = np.array(self.orb_redcoords)
+        num_each = self.num_each_dir
+
+        #for kind in range(self.num_kpts):
+        kpoint = self.kpoints[kind]
+        coeff = self.eigvecs[spin][kind, :self.num_orbs].T  # [band, orb]
+
+        #if normalize:
+        # find the onsite normalization and delta
+        vec_to_orbs = vecs[None,None,:,:,:]  + orb_pos[None,:,None,None,None] - orb_pos[:,None,None,None,None]
+        full_fac = np.exp(2j * np.pi * np.matvec(vec_to_orbs,kpoint))
+        #print(full_fac.shape)
+        part_overs = self.overlaps_params[spin]*full_fac
+        zero_ov = part_overs[:,:,num_each[0],num_each[1],num_each[2]]
+        np.fill_diagonal(zero_ov, 0)
+        part_overs[:,:,num_each[0],num_each[1],num_each[2]]=zero_ov
+        orb_part_overs = np.sum(np.abs(part_overs),axis=(2,3,4))
+        #for bnd in range(len(coeff)): # don't want to break mem
+        #    if self.eigvals[spin][kind, bnd] < self.efermi + self.energy_shift:
+        new_norm = np.sum(np.conj(coeff[bnd])*coeff[bnd]) # only correct if normalize_params() has been run
+        #print("band new norm:",new_norm)
+        diff_coeff = (1 - 1/new_norm)
+        #print(diff_coeff)
+        full_overs = orb_part_overs*np.abs(np.conj(coeff[bnd,:,None])*coeff[bnd,None,:])
+        #full_overs = np.abs(full_overs)
+        offsite_norm = np.sum(full_overs,axis=(1))
+        full_overs = np.abs(part_overs*np.conj(coeff[bnd,:,None,None,None,None])*coeff[bnd,None,:,None,None,None])
+        #print(offsite_norm)
+        offsite_percent1 = full_overs/offsite_norm[:,None,None,None,None]
+        offsite_percent2 = full_overs/offsite_norm[None,:,None,None,None]
+        #fin_over = self.overlaps_params[spin]*full_fac*np.conj(coeff[bnd,:,None,None,None,None])*coeff[bnd,None,:,None,None,None]
+        #onsite_over = np.diag(fin_over[:,:,num_each[0],num_each[1],num_each[2]])
+        #fin_over = fin_over + 1/2*onsite_over[:,None,None,None,None]*diff_coeff*offsite_percent1 + 1/2*onsite_over[None,:,None,None,None]*diff_coeff*offsite_percent2
+
+        fin_ham = self.TB_params[spin]*full_fac*np.conj(coeff[bnd,:,None,None,None,None])*coeff[bnd,None,:,None,None,None]
+        onsite_ham = np.diag(fin_ham[:,:,num_each[0],num_each[1],num_each[2]])
+        #print(onsite_ham)
+        fin_ham = fin_ham + 1/2*onsite_ham[:,None,None,None,None]*diff_coeff*offsite_percent1 + 1/2*onsite_ham[None,:,None,None,None]*diff_coeff*offsite_percent2
+        onsite_ham = onsite_ham - diff_coeff*onsite_ham
+        #print(onsite_ham)
+        zero_ham = fin_ham[:,:,num_each[0],num_each[1],num_each[2]]
+        #print(zero_ham)
+        np.fill_diagonal(zero_ham,onsite_ham)
+        #print(zero_ham)
+        fin_ham[:,:,num_each[0],num_each[1],num_each[2]]=zero_ham
+        icohp_norm = fin_ham #* self.kpt_weights[kind]
+
+        #else:
+        # use all the parameters (much slower)
+        #exp_fac = np.exp(2j*np.pi*np.dot(kpoint,self.flat_vec_to_orbs))
+        #if self.set_min == True:
+        #    exp_fac[self.dist_to_orbs > self.min_hopping_dist] = 0
+        exp_fac = full_fac #np.reshape(exp_fac,(self.num_orbs,self.num_orbs,self.num_trans[0],self.num_trans[1],self.num_trans[2]))
+
+        mult_coeff = np.conj(coeff)[bnd, :, None] * coeff[bnd, None, :] # band,orb1,orb2
+        icohp = self.TB_params[spin]*exp_fac * mult_coeff[:, :, None, None, None] #* self.kpt_weights[kind] #np.sum(,axis=(0))  #[orb1,orb2,tran1,tran2,tran3]
+        icoop = self.overlaps_params[spin]*exp_fac* mult_coeff[:, :, None, None, None]
+
+        return icohp_norm, icohp, icoop
 
     @staticmethod
     def get_COOP(self: object, orbs: dict, NN: int=None, include_onsite: bool=False,spin: int = 0) -> npt.NDArray:
@@ -1558,7 +1725,7 @@ class COGITO_TB_Model(object):
         return coop.real # should be real already but stored in complex array
 
     @staticmethod
-    def get_ICOOP(self,spin: int = 0) -> npt.NDArray:
+    def get_ICOOP(self,spin: int = 0,normalize:bool=False) -> npt.NDArray:
         """
         Generates an ICOOP matrix with same dimension as TB parameters (orb1,orb2,T1,T2,T3). Used for fast calculation of bond charges in crystal bond plot or other integrated charge quantities.
         """
@@ -1567,29 +1734,71 @@ class COGITO_TB_Model(object):
         # get it from TB params so have all except orbital energies
         vecs = np.array(self.vec_to_trans)
         orb_pos = np.array(self.orb_redcoords)
+        num_each = self.num_each_dir
 
         for kind in range(self.num_kpts):
             kpoint = self.kpoints[kind]
-
-            # use all the parameters (much slower)
-            exp_fac = np.exp(2j*np.pi*np.dot(kpoint,self.flat_vec_to_orbs))
-            #if self.set_min == True:
-            #    exp_fac[self.dist_to_orbs > self.min_hopping_dist] = 0
-            exp_fac = np.reshape(exp_fac,(self.num_orbs,self.num_orbs,self.num_trans[0],self.num_trans[1],self.num_trans[2]))
-            scaled_olap = self.overlaps_params[spin]*exp_fac #np.sum(,axis=(2,3,4)) # [orb1,orb2]
-
             coeff = self.eigvecs[spin][kind, :self.num_orbs].T  # [band, orb]
-            include_band = self.eigvals[spin][kind, :].flatten() < self.efermi + self.energy_shift
-            count = np.zeros(self.num_orbs)
-            count[include_band] = 1
-            mult_coeff = np.conj(coeff)[:, :, None] * coeff[:, None, :] * count[:, None, None]  # band,orb1,orb2
-            sum_coeff = np.sum(mult_coeff, axis=0)
 
-            energyCont = scaled_olap * sum_coeff[:, :, None, None, None]
+            if normalize:
+                # find the onsite normalization and delta
+                vec_to_orbs = vecs[None,None,:,:,:]  + orb_pos[None,:,None,None,None] - orb_pos[:,None,None,None,None]
+                full_fac = np.exp(2j * np.pi * np.matvec(vec_to_orbs,kpoint))
+                #print(full_fac.shape)
+                part_overs = self.overlaps_params[spin]*full_fac
+                zero_ov = part_overs[:,:,num_each[0],num_each[1],num_each[2]]
+                np.fill_diagonal(zero_ov, 0)
+                part_overs[:,:,num_each[0],num_each[1],num_each[2]]=zero_ov
+                orb_part_overs = np.sum(np.abs(part_overs),axis=(2,3,4))
+                for bnd in range(len(coeff)): # don't want to break mem
+                    if self.eigvals[spin][kind, bnd] < self.efermi + self.energy_shift:
+                        new_norm = np.sum(np.conj(coeff[bnd])*coeff[bnd]) # only correct if normalize_params() has been run
+                        #print("band new norm:",new_norm)
+                        diff_coeff = (1 - 1/new_norm)
+                        #print(diff_coeff)
+                        full_overs = orb_part_overs*np.abs(np.conj(coeff[bnd,:,None])*coeff[bnd,None,:])
+                        #full_overs = np.abs(full_overs)
+                        offsite_norm = np.sum(full_overs,axis=(1))
+                        full_overs = np.abs(part_overs*np.conj(coeff[bnd,:,None,None,None,None])*coeff[bnd,None,:,None,None,None])
+                        #print(offsite_norm)
+                        offsite_percent1 = full_overs/offsite_norm[:,None,None,None,None]
+                        offsite_percent2 = full_overs/offsite_norm[None,:,None,None,None]
+                        #fin_over = self.overlaps_params[spin]*full_fac*np.conj(coeff[bnd,:,None,None,None,None])*coeff[bnd,None,:,None,None,None]
+                        #onsite_over = np.diag(fin_over[:,:,num_each[0],num_each[1],num_each[2]])
+                        #fin_over = fin_over + 1/2*onsite_over[:,None,None,None,None]*diff_coeff*offsite_percent1 + 1/2*onsite_over[None,:,None,None,None]*diff_coeff*offsite_percent2
 
-            #coeff = self.eigvecs[spin][kind,:self.num_orbs].T #[band, orb]
-            #energyCont = ham[None,:,:,:,:,:]*np.conj(coeff[:,:,None,None,None,None])*coeff[:,None,:,None,None,None] # [band,orb1,orb2,tran1,tran2,tran3]
-            icoop += energyCont * self.kpt_weights[kind] #np.sum(,axis=(0))  #[orb1,orb2,tran1,tran2,tran3]
+                        fin_ham = self.overlaps_params[spin]*full_fac*np.conj(coeff[bnd,:,None,None,None,None])*coeff[bnd,None,:,None,None,None]
+                        onsite_ham = np.diag(fin_ham[:,:,num_each[0],num_each[1],num_each[2]])
+                        #print(onsite_ham)
+                        fin_ham = fin_ham + 1/2*onsite_ham[:,None,None,None,None]*diff_coeff*offsite_percent1 + 1/2*onsite_ham[None,:,None,None,None]*diff_coeff*offsite_percent2
+                        onsite_ham = onsite_ham - diff_coeff*onsite_ham
+                        #print(onsite_ham)
+                        zero_ham = fin_ham[:,:,num_each[0],num_each[1],num_each[2]]
+                        #print(zero_ham)
+                        np.fill_diagonal(zero_ham,onsite_ham)
+                        #print(zero_ham)
+                        fin_ham[:,:,num_each[0],num_each[1],num_each[2]]=zero_ham
+                        icoop += fin_ham * self.kpt_weights[kind]
+
+            else:
+                # use all the parameters (much slower)
+                exp_fac = np.exp(2j*np.pi*np.dot(kpoint,self.flat_vec_to_orbs))
+                #if self.set_min == True:
+                #    exp_fac[self.dist_to_orbs > self.min_hopping_dist] = 0
+                exp_fac = np.reshape(exp_fac,(self.num_orbs,self.num_orbs,self.num_trans[0],self.num_trans[1],self.num_trans[2]))
+                scaled_olap = self.overlaps_params[spin]*exp_fac #np.sum(,axis=(2,3,4)) # [orb1,orb2]
+
+                include_band = self.eigvals[spin][kind, :].flatten() < self.efermi + self.energy_shift
+                count = np.zeros(self.num_orbs)
+                count[include_band] = 1
+                mult_coeff = np.conj(coeff)[:, :, None] * coeff[:, None, :] * count[:, None, None]  # band,orb1,orb2
+                sum_coeff = np.sum(mult_coeff, axis=0)
+
+                energyCont = scaled_olap * sum_coeff[:, :, None, None, None]
+
+                #coeff = self.eigvecs[spin][kind,:self.num_orbs].T #[band, orb]
+                #energyCont = ham[None,:,:,:,:,:]*np.conj(coeff[:,:,None,None,None,None])*coeff[:,None,:,None,None,None] # [band,orb1,orb2,tran1,tran2,tran3]
+                icoop += energyCont * self.kpt_weights[kind] #np.sum(,axis=(0))  #[orb1,orb2,tran1,tran2,tran3]
 
         return icoop
 
@@ -1870,9 +2079,9 @@ class COGITO_BAND(object): # ought to pass the class COGITO_TB_Model
         # Update layout to set axis limits and ticks
         bs_figure.update_layout(margin=dict(l=20, r=20, t=50, b=0),
             xaxis=dict(showgrid=False,range=[kpt_line[0], kpt_line[-1]], tickvals=nodes,ticktext=labels,
-                       showline=True, linewidth=1.5, linecolor='black', mirror=True,tickfont=dict(size=16), titlefont=dict(size=18)),
+                       showline=True, linewidth=1.5, linecolor='black', mirror=True,tickfont=dict(size=16), title=dict(font=dict(size=18))),
             yaxis=dict(showgrid=False,range=[ylim[0], ylim[1]],showline=True, linewidth=2, linecolor='black', mirror=True,
-                       tickfont=dict(size=16), titlefont=dict(size=18)),
+                       tickfont=dict(size=16), title=dict(font=dict(size=18))),
             title={'text':'<b>Bandstructure</b>', 'font':dict(size=26, color='black',family='Times')},
             #plot_bgcolor='rgba(0, 0, 0, 0)',
             title_x = 0.5,  # Center the title
@@ -1955,14 +2164,17 @@ class COGITO_BAND(object): # ought to pass the class COGITO_TB_Model
         allorbs = {}
         for elem in self.elements:
             allorbs[elem] = ["s","p","d","f"]
-        elem = list(orbdict.keys())[0]
-        orbs = list(orbdict.values())[0]
-        all_orb = ''
-        for orb in orbs:
-            all_orb = all_orb+orb
-        full_label = "% "+elem+" "+all_orb
+        # make label
+        full_label = ""
+        for ei in range(len(list(orbdict.keys()))):
+            elem = list(orbdict.keys())[ei]
+            orbs = list(orbdict.values())[ei]
+            all_orb = ''
+            for orb in orbs:
+                all_orb = all_orb+orb
+            full_label = full_label+" "+elem+"("+all_orb+")"
         fig = self.get_COOP([orbdict,allorbs], include_onsite=True,from_dash=True,color_label=full_label, orbProj=True,ylim=ylim)
-        fig.write_html(self.directory+"projectedBS"+elem+".html")
+        fig.write_html(self.directory+"projectedBS"+full_label+".html")
 
     def make_COHP_dashapp(self,pathname: str = "/COGITO_COHP/") -> None:
         """
@@ -2063,7 +2275,7 @@ class COGITO_BAND(object): # ought to pass the class COGITO_TB_Model
 
         # Run the app
         #if __name__ == '__main__':
-        app.run_server(debug=True)
+        app.run(debug=True)
 
 # also make an orbital projected bandstrucutre plotter by passed {orb} from user to COOP with [{orb}, {all_orbs}]
 class COGITO_UNIFORM(object):
@@ -2536,7 +2748,11 @@ class COGITO_UNIFORM(object):
 
     def get_projectedDOS(self, elem : str, ylim: list = (-10, 10), sigma: float=0.1) -> None:
         """
-        Returns the COGITO-orbital projected density of states for a specific element. By construction, this performs the projection by Mulliken-style analysis.
+        Returns the COGITO-orbital projected density of states for a specific element.
+        This function is mostly plotting functionality for visualizing an orbital decomposed projected DOS for one element.
+        If you only need the raw projected values for specific atoms and orbitals (defined in curorbdict), just call something like: "coop = self.TB_model.get_COOP(self, [curorbdict,allorbs], include_onsite=True, spin=key)"  (similar to get_projectedBS function).
+
+        By construction, this performs the projection by Mulliken-style analysis.
         Projection without Mulliken is obfuscated by the nonorthogonal nature of the orbitals, which causes much larger projection at high energy states due to antibonding.
 
         Args:
@@ -2781,9 +2997,15 @@ class COGITO_UNIFORM(object):
 
         bond_occup = {}
         icohp = {}
+        icoop = {}
+        normalize=False # generally want False! Only want True if testing my weird normalization scheme.
         for key in self.keys: # plot bands for each spin
             bond_occup[key] = self.TB_model.get_bond_occup(self, spin = key)
-            icohp[key] = bond_occup[key]*self.TB_params[key]
+            if not normalize:
+                icohp[key] = bond_occup[key]*self.TB_params[key] # just need for determining minimum dimensions
+            else: # have to make seperately since the normalization skews bond_occup contributions
+                icohp[key] = self.TB_model.get_ICOHP(self, spin = key,normalize=normalize)
+                icoop[key] = self.TB_model.get_ICOOP(self, spin = key,normalize=normalize)
 
         if not hasattr(self, 'ICO_trans'):
             # make the size of everything smaller because most is zeros
@@ -2804,7 +3026,6 @@ class COGITO_UNIFORM(object):
 
         small_overlap = {}
         small_hams = {}
-        icoop = {}
         for key in self.keys: # reduce the size of bond_occup and overlap
             old_each_dir = self.num_each_dir
             new_each_dir = self.ICO_eachdir
@@ -2817,8 +3038,16 @@ class COGITO_UNIFORM(object):
             small_hams[key] = self.TB_params[key][:,:, old_each_dir[0] - new_each_dir[0]: old_each_dir[0] + new_each_dir[0] + 1,
                                     old_each_dir[1] - new_each_dir[1]:old_each_dir[1] + new_each_dir[1] + 1,
                                     old_each_dir[2] - new_each_dir[2]:old_each_dir[2] + new_each_dir[2] + 1]
-            icohp[key] = bond_occup[key]*small_hams[key]
-            icoop[key] = bond_occup[key]*small_overlap[key]
+            if not normalize:
+                icohp[key] = bond_occup[key]*small_hams[key]
+                icoop[key] = bond_occup[key]*small_overlap[key]
+            else:
+                icohp[key] = icohp[key][:,:, old_each_dir[0] - new_each_dir[0]: old_each_dir[0] + new_each_dir[0] + 1,
+                                        old_each_dir[1] - new_each_dir[1]:old_each_dir[1] + new_each_dir[1] + 1,
+                                        old_each_dir[2] - new_each_dir[2]:old_each_dir[2] + new_each_dir[2] + 1]
+                icoop[key] = icoop[key][:,:, old_each_dir[0] - new_each_dir[0]: old_each_dir[0] + new_each_dir[0] + 1,
+                                        old_each_dir[1] - new_each_dir[1]:old_each_dir[1] + new_each_dir[1] + 1,
+                                        old_each_dir[2] - new_each_dir[2]:old_each_dir[2] + new_each_dir[2] + 1]
 
         self.bond_occup = bond_occup
         self.small_overlap = small_overlap
@@ -7182,9 +7411,9 @@ class COGITO_BS_widget(object): # ought to pass the class COGITO_TB_Model
         # Update layout to set axis limits and ticks
         bs_figure.update_layout(margin=dict(l=20, r=20, t=50, b=0),
             xaxis=dict(showgrid=False,range=[kpt_line[0], kpt_line[-1]], tickvals=nodes,ticktext=labels,
-                       showline=True, linewidth=1.5, linecolor='black', mirror=True,tickfont=dict(size=16), titlefont=dict(size=18)),
+                       showline=True, linewidth=1.5, linecolor='black', mirror=True,tickfont=dict(size=16), title=dict(font=dict(size=18))),
             yaxis=dict(showgrid=False,range=[ylim[0], ylim[1]],showline=True, linewidth=2, linecolor='black', mirror=True,
-                       tickfont=dict(size=16), titlefont=dict(size=18)),
+                       tickfont=dict(size=16), title=dict(font=dict(size=18))),
             title={'text':'<b>Bandstructure</b>', 'font':dict(size=26, color='black',family='Times')},
             #plot_bgcolor='rgba(0, 0, 0, 0)',
             title_x = 0.5,  # Center the title
@@ -7245,9 +7474,9 @@ class COGITO_BS_widget(object): # ought to pass the class COGITO_TB_Model
         # Update layout to set axis limits and ticks
         bs_figure.update_layout(margin=dict(l=20, r=20, t=50, b=0),
             xaxis=dict(showgrid=False,range=[self.k_dist[0], self.k_dist[-1]], tickvals=self.k_node,ticktext=self.k_label,
-                       showline=True, linewidth=1.5, linecolor='black', mirror=True,tickfont=dict(size=16), titlefont=dict(size=18)),
+                       showline=True, linewidth=1.5, linecolor='black', mirror=True,tickfont=dict(size=16), title=dict(font=dict(size=18))),
             yaxis=dict(showgrid=False,range=[ylim[0], ylim[1]],showline=True, linewidth=2, linecolor='black', mirror=True,
-                       tickfont=dict(size=16), titlefont=dict(size=18)),
+                       tickfont=dict(size=16), title=dict(font=dict(size=18))),
             title={'text':'<b>Bandstructure</b>', 'font':dict(size=26, color='black',family='Times')},
             plot_bgcolor='rgba(0, 0, 0, 0)',
             title_x = 0.5  # Center the title
@@ -7516,9 +7745,9 @@ class COGITO_BS_widget(object): # ought to pass the class COGITO_TB_Model
         # Update layout to set axis limits and ticks
         bondrun_fig.update_layout(margin=dict(l=20, r=20, t=50, b=0),
             xaxis=dict(showgrid=False, tickvals=[0,1],ticktext=self.close_labels,
-                       showline=True, linewidth=1.5, linecolor='black', mirror=True,tickfont=dict(size=16), titlefont=dict(size=18)),
+                       showline=True, linewidth=1.5, linecolor='black', mirror=True,tickfont=dict(size=16), title=dict(font=dict(size=18))),
             yaxis=dict(showgrid=False,range=[ylim[0], ylim[1]],showline=True, linewidth=2, linecolor='black', mirror=True,
-                       tickfont=dict(size=16), titlefont=dict(size=18)),
+                       tickfont=dict(size=16), title=dict(font=dict(size=18))),
             title={'text':'<b>Bond run of selected bond</b>', 'font':dict(size=20, color='black',family='Times')},
             plot_bgcolor='rgba(0, 0, 0, 0)',
             title_x = 0.3  # Center the title
@@ -7828,6 +8057,400 @@ def _cart_to_red(tmp,cart):
     for i in range(0,len(cart)):
         red[i]=np.dot(cnv,cart[i])
     return red
+
+def analyze_bandgap(self, minimum_cohp: float = 0.001,make_bond_info_txt=False):
+    """
+    This function covers the raw ICOHP and ICOOP and bond_occup matrices into something more interpretable while still preserving norms.
+    This constructs three json files:
+    all_bonds.json : includes bonds between all atoms that have a elements above the minimum_cohp.
+    all_unique_bonds : groups the all_bonds into unique ones for more interpretable viewing.
+    all_atoms.json : all onsite atom information, including the bond orb_orb_dict + added onsite and mulliken orbital occupations and partial charges + lone-pair-like energy (cohp) contributions.
+    The structure of the all_bonds json:
+    {"uniq_bonds by "el1_el2_dist_energy": {
+    "bondlength": float, "degeneracy": int, "cohp": float , "coop": float, "bondmagmom": float,
+    "all atom-atom bonds in this set by 'atm1_atm2_T1_T2_T3':{  # just 'atm1_atm2' is not enough since atoms can bond outside unit cell
+    "atmorbs1, atmorbs2": [[int...],[int...]] # used to reference orbital energy, radius, and shape
+    "cohp": [float...] , "coop": [float...], "bondlength": float, "bondmagmom": float, "angle"?:float,  # same data just without averaging
+    "orb-orb e.g. 's-d'": {
+    "cohp": [float...], "coop": [float...], # is referenced to spin state. For non spin-polarized: [float], for spin-polar: [float,float]
+    "orbnums1, orbnums2": [[int...],[int...]] for orbital numbers e.g. for s-p: [[0],[1,2,3]],  # orbital number referenced to atom already selected
+    "bond_occup_matrix": [numorbs1×numorbs2...], "orb_ediff_matrix": [numorbs1×numorbs2...],
+    "cohp_matrix": [numorbs1×numorbs2...], "coop_matrix": [numorbs1×numorbs2...],
+    "S_matrix": [numorbs1×numorbs2...], "H_matrix": [numorbs1×numorbs2...],
+    }
+    }
+    }
+    @return:
+    """
+
+    # do something to get the cohp, normed cohp, and coop just at a specific kpoint and band
+    # first, find the VBM and CBM
+
+    #point_name = ["VBM","CBM"]
+
+    all_eigvals = []
+    for key in self.keys:
+        all_eigvals.append(self.eigvals[key])
+    # get new fermi energy
+    all_eigvals = np.array(all_eigvals)
+
+    tol = 1e-8
+    occupied = all_eigvals <=  self.efermi + tol + self.energy_shift
+    vbm_energy = np.max(all_eigvals[occupied])
+    all_VBMs = np.argwhere(np.abs(all_eigvals-vbm_energy)<=tol)
+    if len(all_VBMs) != 1:
+        print("Warning: The VBM has a degeneracy of", len(all_VBMs))
+        print("VBM analysis will be performed at one and will relate to the others by symmetry.")
+    vbm_spin, vbm_kind, vbm_band = all_VBMs[0]
+    print("VBM found at spin ", vbm_spin, ", band ", vbm_band, ", and kpoint",self.kpoints[vbm_kind])
+
+    unoccupied = all_eigvals > self.efermi + tol + self.energy_shift
+    cbm_energy = np.min(all_eigvals[unoccupied])
+    all_CBMs = np.argwhere(np.abs(all_eigvals-cbm_energy)<=tol)
+    if len(all_CBMs) != 1:
+        print("Warning: The CBM has a degeneracy of", len(all_CBMs))
+        print("CBM analysis will be performed at one and will relate to the others by symmetry.")
+    cbm_spin, cbm_kind, cbm_band = all_CBMs[0]
+    print("CBM found at spin ", cbm_spin, ", band ", cbm_band, ", and kpoint",self.kpoints[cbm_kind])
+    print("Band gap:",cbm_energy-vbm_energy)
+
+    # for key in keys:
+    for key, kind, bnd, point_name in [(vbm_spin, vbm_kind, vbm_band,"VBM"),(cbm_spin, cbm_kind, cbm_band,"CBM")]:
+        icohp_orbnorm, icohp_orb, icoop_orb = self.TB_model.get_point_data(self,kind,bnd,spin=key)
+        print("got vals")
+        #icoop_orb = self.ICOOP
+        #icohp_orb = self.ICOHP
+        hams = self.TB_params[key]
+        # each_dir = np.array([1, 1, 1]) #self.num_each_dir
+        cell = np.array(self.num_trans) # each_dir * 2 + 1
+        vec_to_trans = self.vec_to_trans
+        each_dir = self.num_each_dir
+
+        #for x in range(cell[0]):
+        #    for y in range(cell[1]):
+        #        for z in range(cell[2]):
+        #            vec_to_trans[x, y, z] = [x - each_dir[0], y - each_dir[1], z - each_dir[2]]
+
+        num_total_atoms = self.numAtoms * cell[0] * cell[1] * cell[2]
+        vec_to_atoms = vec_to_trans[None, :, :, :] + np.array(self.primAtoms)[:, None, None, None]
+        vec_to_atoms = np.reshape(vec_to_atoms, (num_total_atoms, 3)).T
+        # print(vec_to_atoms)
+        cart_to_atoms = _red_to_cart((self._a[0], self._a[1], self._a[2]), vec_to_atoms.transpose())
+        cart_to_atoms = np.reshape(cart_to_atoms,(self.numAtoms, cell[0], cell[1], cell[2],3))
+
+        #for key in keys:
+        icohp_orb = icohp_orb.real  # self.TB_model.get_ICOHP(self,spin=key).real
+        icohp_orbnorm = icohp_orbnorm.real
+        icoop_orb = icoop_orb.real
+        hams = hams.real
+
+        added_atoms = 0
+        rejected_atoms = 0
+        bond_uniq_keys = []
+        bond_group_keys = []
+        all_atoms_bonds = {}
+        all_atoms_onsite = {}
+        for atm1 in range(self.numAtoms):
+            orbs1 = np.arange(self.num_orbs)[self.orbatomnum == atm1]
+            orb_type1 = self.exactorbtype[orbs1]
+            # section orbitals by type (s, p, d, f)
+            is_s1 = []
+            is_p1 = []
+            is_d1 = []
+            is_f1 = []
+            for i in orb_type1:
+                is_s1.append("s" in i)
+                is_p1.append("p" in i)
+                is_d1.append("d" in i)
+                is_f1.append("f" in i)
+            sorbs1 = np.arange(len(orb_type1))[is_s1]
+            porbs1 = np.arange(len(orb_type1))[is_p1]
+            dorbs1 = np.arange(len(orb_type1))[is_d1]
+            forbs1 = np.arange(len(orb_type1))[is_f1]
+            for atm2 in range(self.numAtoms):
+                # get atom orbital information
+                orbs2 = np.arange(self.num_orbs)[self.orbatomnum == atm2]
+                orb_type2 = self.exactorbtype[orbs2]
+                # section orbitals by type (s, p, d, f)
+                is_s2 = []
+                is_p2 = []
+                is_d2 = []
+                is_f2 = []
+                for i in orb_type2:
+                    is_s2.append("s" in i)
+                    is_p2.append("p" in i)
+                    is_d2.append("d" in i)
+                    is_f2.append("f" in i)
+                sorbs2 = np.arange(len(orb_type2))[is_s2]
+                porbs2 = np.arange(len(orb_type2))[is_p2]
+                dorbs2 = np.arange(len(orb_type2))[is_d2]
+                forbs2 = np.arange(len(orb_type2))[is_f2]
+
+                for T1 in range(cell[0]):
+                    for T2 in range(cell[1]):
+                        for T3 in range(cell[2]):
+                            bond_key = str(atm1)+", "+str(atm2)+", "+str(T1-each_dir[0])+", "+str(T2-each_dir[1])+", "+str(T3-each_dir[2])
+
+                            #sum_cohp = {}
+                            #sum_cohpnorm = {}
+                            #sum_coop = {}
+                            #sum_hams = {}
+                            #for key in keys:
+                            sum_cohp = icohp_orb[orbs1, :][:, orbs2][:,:,T1,T2,T3]
+                            max_cohp = np.amax(np.abs(sum_cohp))
+                            if (atm1 == atm2 and T1 == each_dir[0] and T2 == each_dir[1] and T3 == each_dir[2]) or (max_cohp > minimum_cohp):
+                                sum_cohpnorm = icohp_orbnorm[orbs1, :][:, orbs2][:,:,T1,T2,T3]
+                                sum_coop = icoop_orb[orbs1, :][:, orbs2][:,:,T1,T2,T3]
+                                sum_hams = hams[orbs1, :][:, orbs2][:,:,T1,T2,T3]
+
+                                orbkeytypes = ["s","p","d","f"]
+                                orb_orb_dict = {}
+                                total_bond_cohp = 0
+                                total_bond_cohpnorm = 0
+                                total_bond_coop = 0
+                                max_cohp = 0
+                                for soi1, spec_orbs1 in enumerate([sorbs1,porbs1,dorbs1,forbs1]):
+                                    if len(spec_orbs1) != 0:
+                                        for soi2, spec_orbs2 in enumerate([sorbs2, porbs2, dorbs2, forbs2]):
+                                            if len(spec_orbs2) != 0:
+                                                #cohp = np.zeros((len(spec_orbs1),len(spec_orbs2)))
+                                                #cohpnorm = np.zeros((len(spec_orbs1),len(spec_orbs2)))
+                                                #coop = np.zeros((len(spec_orbs1),len(spec_orbs2)))
+                                                #orborb_bondoc = np.zeros((len(spec_orbs1),len(spec_orbs2)))
+                                                orb_key = orbkeytypes[soi1] + "-" + orbkeytypes[soi2]
+                                                orb_orb_dict[orb_key] = {}
+                                                orb_orb_dict[orb_key]["orbnums"] = [spec_orbs1.tolist(),spec_orbs2.tolist()]
+                                                #for key in keys:
+                                                cohp = sum_cohp[spec_orbs1, :][:, spec_orbs2]
+                                                cohpnorm = sum_cohpnorm[spec_orbs1, :][:, spec_orbs2]
+                                                coop = sum_coop[spec_orbs1, :][:, spec_orbs2]
+                                                mcohp = np.amax(np.abs(cohp))
+                                                if mcohp > max_cohp:
+                                                    max_cohp = mcohp
+                                                orb_orb_dict[orb_key]["cohp_matrix"] = np.around(cohp,decimals=12).tolist()
+                                                orb_orb_dict[orb_key]["coop_matrix"] = np.around(coop,decimals=12).tolist()
+                                                tot_cohp = np.sum(cohp)
+                                                tot_cohpnorm = np.sum(cohpnorm)
+                                                tot_coop = np.sum(coop)
+                                                total_bond_cohp += tot_cohp
+                                                total_bond_cohpnorm += tot_cohpnorm
+                                                total_bond_coop += tot_coop
+                                                orb_orb_dict[orb_key]["cohp"] = np.around(tot_cohp,decimals=12).tolist()
+                                                orb_orb_dict[orb_key]["cohpnorm"] = np.around(tot_cohpnorm,decimals=12).tolist()
+                                                orb_orb_dict[orb_key]["coop"] = np.around(tot_coop,decimals=12).tolist()
+
+                                if atm1==atm2 and T1==each_dir[0] and T2==each_dir[1] and T3==each_dir[2]: # add onsite terms to atom dictionary
+                                    all_atoms_onsite[str(atm1)] = {}
+                                    atmelem = self.elements[atm1]
+
+                                    # get the onsite orbital occupation and mulliken orbital occupation
+                                    # just do this per orbitals (any lone-pair like terms can be seen in the coop matrix and
+                                    # should mostly just be in the cohp/energy term anyways)
+                                    #onsite_occup = np.zeros((len(orbs1)))
+                                    #mulli_occup = np.zeros((len(orbs1)))
+                                    #orb_energies = np.zeros((len(orbs1)))
+                                    #for key in keys:
+                                    onsite_occup = np.sum(sum_coop,axis=1)
+                                    mulli_occup = np.sum(icoop_orb[orbs1],axis=(1,2,3,4))
+                                    orb_energies = np.diag(sum_hams)
+
+                                    onsite_occ_dict = {}
+                                    mulli_occ_dict = {}
+                                    onsite_occ_dict_ind = {}
+                                    mulli_occ_dict_ind = {}
+                                    grouporb_energies = {}
+                                    onsite_orbmag = {}
+                                    mulli_orbmag = {}
+                                    orbkeytypes = ["s", "p", "d", "f"]
+                                    for soi, spec_orbs in enumerate([sorbs1, porbs1, dorbs1, forbs1]):
+                                        if len(spec_orbs) != 0:
+                                            onsite_occ_dict[orbkeytypes[soi]] = np.around(np.sum(onsite_occup[spec_orbs]),decimals=6).tolist()
+                                            onsite_occ_dict_ind[orbkeytypes[soi]] = np.around(onsite_occup[spec_orbs],decimals=12).tolist()
+                                            mulli_occ_dict[orbkeytypes[soi]] = np.around(np.sum(mulli_occup[spec_orbs]),decimals=6).tolist()
+                                            mulli_occ_dict_ind[orbkeytypes[soi]] = np.around(mulli_occup[spec_orbs],decimals=12).tolist()
+                                            grouporb_energies[orbkeytypes[soi]] = np.around(orb_energies[spec_orbs],decimals=6).tolist()
+
+                                    # now get lone-pair type terms
+                                    intra_atm_combos = {}
+                                    intra_atm_combos['cohp'] = {}
+                                    intra_atm_combos['cohpnorm'] = {}
+                                    intra_atm_combos['coop'] = {}
+                                    # kinda dangerous to do but they are not used anywhere else
+                                    #intra_cohp = np.zeros((len(orbs1),len(orbs1)))
+                                    #intra_cohpnorm = np.zeros((len(orbs1),len(orbs1)))
+                                    #intra_coop = np.zeros((len(orbs1),len(orbs1)))
+                                    #for key in keys:
+                                    intra_cohp = sum_cohp
+                                    intra_cohpnorm = sum_cohpnorm
+                                    np.fill_diagonal(intra_cohp,0)
+                                    np.fill_diagonal(intra_cohpnorm,0)
+                                    intra_coop = sum_coop
+                                    np.fill_diagonal(intra_coop,0)
+                                    for soi1, spec_orbs1 in enumerate([sorbs1, porbs1, dorbs1, forbs1]):
+                                        if len(spec_orbs1) != 0:
+                                            for soi2, spec_orbs2 in enumerate([sorbs2, porbs2, dorbs2, forbs2]):
+                                                if len(spec_orbs2) != 0:
+                                                    tot_cohp = np.sum(intra_cohp[spec_orbs1,:][:, spec_orbs2])
+                                                    tot_cohpnorm = np.sum(intra_cohpnorm[spec_orbs1,:][:, spec_orbs2])
+                                                    tot_coop = np.sum(intra_coop[spec_orbs1,:][:, spec_orbs2])
+                                                    orb_key = orbkeytypes[soi1] + "-" + orbkeytypes[soi2]
+                                                    if tot_cohp > 0.001:
+                                                        intra_atm_combos['cohp'][orb_key] = float(np.around(tot_cohp,decimals=6))
+                                                        intra_atm_combos['cohpnorm'][orb_key] = float(np.around(tot_cohpnorm,decimals=6))
+                                                        intra_atm_combos['coop'][orb_key] = float(np.around(tot_coop,decimals=6))
+
+                                    all_atoms_onsite[str(atm1)]['elem'] = atmelem
+
+                                    all_atoms_onsite[str(atm1)]['onsite_occup'] = onsite_occ_dict
+                                    all_atoms_onsite[str(atm1)]['onsite_occup_perorb'] = onsite_occ_dict_ind
+                                    all_atoms_onsite[str(atm1)]['mulli_occup'] = mulli_occ_dict
+                                    all_atoms_onsite[str(atm1)]['mulli_occup_perorb'] = mulli_occ_dict_ind
+                                    all_atoms_onsite[str(atm1)]['orb_energies'] = grouporb_energies
+                                    all_atoms_onsite[str(atm1)]['inter_orb_combos'] = intra_atm_combos
+                                    all_atoms_onsite[str(atm1)]["orb-orb dict"] = orb_orb_dict
+                                    all_atoms_onsite[str(atm1)]["cohp"] = np.around(total_bond_cohp,decimals=12).tolist()
+                                    all_atoms_onsite[str(atm1)]["cohpnorm"] = np.around(total_bond_cohpnorm,decimals=12).tolist()
+                                    all_atoms_onsite[str(atm1)]["coop"] = np.around(total_bond_coop,decimals=12).tolist()
+
+
+                                # add all the values to the atom-atom bond dictionary
+                                #if max_cohp > minimum_cohp:
+                                added_atoms += 1
+                                all_atoms_bonds[bond_key] = {}
+                                atm_pos1 = cart_to_atoms[atm1,each_dir[0],each_dir[1],each_dir[2]]
+                                atm_pos2 = cart_to_atoms[atm2,T1,T2,T3]
+                                bond_vec = atm_pos1-atm_pos2
+                                bond_length = np.around(np.linalg.norm(bond_vec),decimals=6)
+                                bond_elems = np.sort([self.elements[atm1],self.elements[atm2]])
+                                group_key = (bond_elems[0]+" "+bond_elems[1]+" "+str(np.around(bond_length,decimals=1))+
+                                             " "+str(np.around(np.sum(total_bond_cohp),decimals=1)))
+                                all_atoms_bonds[bond_key]["group_key"] = group_key
+                                all_atoms_bonds[bond_key]["elements"] = [self.elements[atm1],self.elements[atm2]]
+                                all_atoms_bonds[bond_key]["atomorbs1, atomorbs2"] = [orbs1.tolist(),orbs2.tolist()]
+                                all_atoms_bonds[bond_key]["bond_length"] = float(bond_length)
+                                all_atoms_bonds[bond_key]["orb-orb dict"] = orb_orb_dict
+                                all_atoms_bonds[bond_key]["cohp"] = np.around(total_bond_cohp,decimals=12).tolist()
+                                all_atoms_bonds[bond_key]["cohpnorm"] = np.around(total_bond_cohpnorm,decimals=12).tolist()
+                                all_atoms_bonds[bond_key]["coop"] = np.around(total_bond_coop,decimals=12).tolist()
+
+                                # for grouping into bond types
+                                bond_uniq_keys.append(bond_key)
+                                bond_group_keys.append(group_key)
+                            else:
+                                rejected_atoms += 1
+
+        print("num atom-atom bonds added vs rejected:", added_atoms, rejected_atoms)
+        #print(all_atoms_bonds)
+        #print("num atom added vs rejected:", added_atoms, rejected_atoms)
+        #print(all_atoms_bonds['0, 2, 0, 0, 0'])
+        #print(all_atoms_bonds['2, 0, 0, 0, 0'])
+
+        bond_uniq_keys = np.array(bond_uniq_keys)
+        bond_group_keys = np.array(bond_group_keys)
+        uniq_bonds, uniq_bond_inverse = np.unique(bond_group_keys, return_inverse=True)
+        #print(uniq_bonds)
+        #print(len(uniq_bonds),len(bond_uniq_keys),len(uniq_bond_inverse))
+        grouped_uniq_keys = []
+        for i in range(len(uniq_bonds)):
+            grouped_uniq_keys.append(bond_uniq_keys[uniq_bond_inverse==i].tolist())
+        #print(grouped_uniq_keys)
+        #print(uniq_bond_inverse)
+
+        all_group_bonds = {}
+        for i in range(len(uniq_bonds)):
+            avg_dist = 0
+            avg_cohp = 0
+            avg_cohpnorm = 0
+            avg_coop = 0
+            if self.spin_polar:
+                avg_magmom = 0
+            degen = len(grouped_uniq_keys[i])
+            for j in grouped_uniq_keys[i]:
+                avg_dist += all_atoms_bonds[j]["bond_length"]
+                avg_cohp += all_atoms_bonds[j]["cohp"]
+                avg_cohpnorm += all_atoms_bonds[j]["cohpnorm"]
+                avg_coop += all_atoms_bonds[j]["coop"]
+                if self.spin_polar:
+                    avg_magmom += all_atoms_bonds[j]["bond_magmom"]
+            if avg_dist > 0:
+                all_group_bonds[uniq_bonds[i]] = {}
+                # Important note: Half of the degeneracies are trivial; from  <i|j+R> and <j|i-R>
+                # One could either count that trivial degeneracy in the degen count or double the bond cohp and coop valeus
+                # Convention often just doubles the cohp and coop values and considers only true degeneracy count
+                all_group_bonds[uniq_bonds[i]]["degeneracy"] = int(degen/2)
+                all_group_bonds[uniq_bonds[i]]["bond length"] = round(avg_dist/degen,12)
+                all_group_bonds[uniq_bonds[i]]["cohp"] = round(avg_cohp/degen*2,12)
+                all_group_bonds[uniq_bonds[i]]["cohpnorm"] = round(avg_cohpnorm/degen*2,12)
+                all_group_bonds[uniq_bonds[i]]["coop"] = round(avg_coop/degen*2,12)
+                if self.spin_polar:
+                    all_group_bonds[uniq_bonds[i]]['bond_magmom'] = round(avg_magmom/degen*2,12)
+                all_group_bonds[uniq_bonds[i]]["all bonds"] = grouped_uniq_keys[i] # will be twice as many keys as degen
+
+        #print(all_group_bonds.keys())
+        import json
+        with open(self.directory + point_name + "all_unique_bonds"+self.file_suff+".json","w") as json_file:
+            json.dump(all_group_bonds,json_file)
+        with open(self.directory + point_name + "all_bonds"+self.file_suff+".json","w") as json_file:
+            json.dump(all_atoms_bonds,json_file)
+        with open(self.directory + point_name + "all_atoms"+self.file_suff+".json","w") as json_file:
+            json.dump(all_atoms_onsite,json_file)
+
+    if make_bond_info_txt:
+        # print out to a file
+        # Define the file name
+        file_name = self.directory + point_name + "bond_info" + self.file_suff + ".txt"
+
+        total_energy = 0
+        total_charge = 0
+        if self.spin_polar:
+            total_magmom = 0
+        # Open the file in write mode and write some data
+        with open(file_name, "w") as file:
+            file.write("Generated by COGITO\n")
+            # Print header
+            if self.spin_polar:
+                widths = [8, 8, 10, 12, 14, 12, 8, 10]
+                header = ["Atom1", "Atom2", "dist(A)", "eV/bond", "elec/bond", "mag/bond", "#/unit",
+                          "ev/unit"]
+            else:
+                widths = [8, 8, 10, 12, 14, 8, 10]
+                header = ["Atom1", "Atom2", "dist(A)", "eV/bond", "elec/bond", "#/unit", "ev/unit"]
+            print("".join(f"{header[i]:<{10}}" for i in range(len(header))))
+            file.write("".join(f"{header[i]:<{10}}" for i in range(len(header))))
+            file.write("\n")
+
+            # go through keys in order of bond length
+            all_uniq_keys = list(all_group_bonds.keys())
+            bond_dists = np.zeros(len(all_uniq_keys))
+            for i, key in enumerate(all_uniq_keys):
+                bond_dists[i] = all_group_bonds[key]["bond length"] # ["degeneracy"] ["cohp"] ["coop"]
+            args = np.argsort(bond_dists)
+            sorted_keys = np.array(all_uniq_keys)[args]
+
+            for key in sorted_keys:
+                [atom2, atom1] = key.split(" ")[:2]
+                degen = all_group_bonds[key]['degeneracy']
+                b_energy = float(np.around(all_group_bonds[key]['cohp'], decimals=4))
+                b_charge = float(np.around(all_group_bonds[key]['coop'], decimals=4))
+                tot_energy = float(np.around(all_group_bonds[key]['cohp'] * degen, decimals=4))
+                total_energy += all_group_bonds[key]['cohp'] * degen
+                total_charge += all_group_bonds[key]['coop'] * degen
+                dist = np.around(all_group_bonds[key]['bond length'], decimals=2)
+                all_vals = [atom1, atom2, dist, b_energy, b_charge, degen, tot_energy]
+                if self.spin_polar:
+                    total_magmom += all_group_bonds[key]['bond_magmom'] * degen
+                    b_magmom = float(np.around(all_group_bonds[key]['bond_magmom'], decimals=4))
+                    all_vals = [atom1, atom2, dist, b_energy, b_charge, b_magmom, degen, tot_energy]
+                print("".join(f"{str(all_vals[i]):<{10}}" for i in range(len(all_vals))))
+                file.write("".join(f"{str(all_vals[i]):<{10}}" for i in range(len(all_vals))))
+                file.write("\n")
+            file.write("\n")
+            file.write("total eV (iCOHP) / unit:  " + str(np.around(total_energy, decimals=4)))
+            file.write("\n")
+            file.write("total bond elec (iCOOP) / unit:  " + str(np.around(total_charge, decimals=4)))
+            if self.spin_polar:
+                file.write("\n")
+                file.write("total bond mag charge / unit:  " + str(np.around(total_magmom, decimals=4)))
 
 def _red_to_cart(prim_vec,prim_coord):
     """
