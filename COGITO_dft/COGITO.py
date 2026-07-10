@@ -18,7 +18,7 @@ import copy
 from functools import partial
 import plotly.graph_objects as go
 
-dist_version = "0.1.0"
+dist_version = "0.3.0"
 
 class COGITO(object):
     def __init__(self,wavecar_dir,readmode = False,spin=0,spin_polar = False):
@@ -310,7 +310,7 @@ class COGITO(object):
     def generate_TBmodel(self, invariant: bool = True, irreducible_grid=True, verbose=0, tag="", include_excited=1, calc_nrms=False, save_orb_converg_info:bool=True,
                          orbfactor=1.0, num_steps=50, num_outer=4, plot_orbs = False,
                          min_proj=0.01, band_opt=True,orb_opt=True,orb_orth=False,start_from_orbnpy = False,plot_projBS = False,plot_projDOS=False,orbs = None,
-                         save_orb_data=False,save_orb_figs=False,minimum_orb_energy: float=-60,min_duplicate_energy:float=-60, file_type: str="npy"):
+                         save_orb_data=False,save_orb_figs=False,minimum_orb_energy: float=-60,min_duplicate_energy:float=-60, file_type: str="npy",wannier_fit=True):
         """
         Runs all the functions neccessary to generate the TB interpolation.
         REQUIRES UNIFORM KPT GRID WITH NO SYMMETRY OR FULL SYMMETRY FOR TB MODEL.
@@ -348,6 +348,8 @@ class COGITO(object):
             minimum_orb_energy (float): The lower limit to add semi-core states in the POTCAR into the COGITO basis. Uses the atomic orbital energy listed in POTCAR.
             min_duplicate_energy (float): The lower limit to add semi-core states when there is another valence state of the same l quantum number in the POTCAR into the COGITO basis. Uses the atomic orbital energy listed in POTCAR.
             file_type (str): The lower limit to add semi-core states in the POTCAR into the COGITO basis. Uses the atomic orbital energy listed in POTCAR.
+            wannier_fit (bool): Whether to perform the iterations and fit using the approximate local orbitals from the Bloch orbital at k=0 (False) or just from the wannier orbital (True).
+                            While the False option is faster (in serial), it varies unpredictably with supercell size and other variables which shouldn't effect fit. Thus, True is highly advised.
 
         Usage:
             new_model = COGITO("silicon/")
@@ -372,9 +374,10 @@ class COGITO(object):
         self.min_proj = min_proj
         self.low_min_proj = 0.5 # if bands -5 below fermi have less than this, don't include
         self.use_pseudo = False
-        if num_steps == 0:
+        if num_steps == 0 or num_outer == 0:
             self.use_pseudo = True
-        
+        orig_pseudo = self.use_pseudo
+
         # get converged ideal atomic orbitals
         if self.verbose > 0:
             print("cartesian atom positions:",self.cartAtoms)
@@ -389,6 +392,107 @@ class COGITO(object):
         print("elapsed time for initialization:",elapsed_time1)
         print("")
 
+        # renormalize and set up pseudo orbitals for projection
+        use_interp = True
+        if use_interp:  # use the actual PAW pseudo interpolation as initial guess
+            self.use_pseudo = True
+            orbital_coeffs = np.ones(
+                (self.num_orbs, 9))  # doesn't matter what this is, isn't used when use_pseudo==True
+
+            orb_to_l = [0, 1, 1, 1, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3]
+            const = self.gridxyz[0] * self.gridxyz[1] * self.gridxyz[2] / self.vol ** (1 / 2)
+            for orb in range(self.num_orbs):
+                orb_peratom = self.sph_harm_key[orb]
+                l = orb_to_l[orb_peratom]
+                orbital_coeffs[orb][-1] = l
+
+                orig_radial = self.orig_radial[orb] * const
+
+                # only do projectors that have the same center angular momentum as the orbital
+                num_projs = self.num_orbs + self.num_exorbs
+                all_sphharm = np.append(self.sph_harm_key, self.ex_sph_harm_key)
+                all_orbtype = np.append(self.orbtype, self.ex_orbtype)
+                all_orbatm = np.append(self.orbatomnum, self.exorbatomnum)
+                sphharm1 = all_sphharm[orb]
+                atm = all_orbatm[orb]
+                nonzero = (all_sphharm == sphharm1) & (
+                        all_orbatm == atm)  # only nonzero if the orbs are on the same atom and have the same l and ml quantum nums
+                orbs = np.arange(num_projs, dtype=np.int_)[nonzero]
+
+                real_proj_data = self.atmProjectordata[self.elements[self.orbatomnum[orb]]]
+                proj_cutoff = real_proj_data[0]
+                real_proj_grid = np.linspace(0, proj_cutoff, num=100, endpoint=False)
+
+                # if self.use_pseudo or True:  # this is normalizing the initial pseudo orbitals correctly
+                # first get norm and radius
+                orb_rad = np.linspace(0, 8, num=100, endpoint=False)
+                simple_rad = np.linspace(0, 5, num=100, endpoint=False)
+                pseudo_orb = interpolate.griddata(simple_rad, orig_radial, orb_rad, method='cubic',
+                                                  fill_value=0)  # for calculating pseudo norm and rad
+
+                pseudo_norm = integrate.trapezoid((pseudo_orb * pseudo_orb) * orb_rad ** 2, x=orb_rad)
+                pseudo_rad = integrate.trapezoid((pseudo_orb * pseudo_orb) / pseudo_norm * orb_rad ** 3,
+                                                 x=orb_rad)
+
+                pseudo_orb = interpolate.griddata(simple_rad, orig_radial, real_proj_grid, method='cubic',
+                                                  fill_value=0)  # for projecting on projectors
+                ae_overlap = pseudo_norm
+                for orb1 in orbs:
+                    type1 = all_orbtype[orb1]
+                    gaus_proj_orbs1 = pseudo_orb * real_proj_data[1][type1]
+                    gaus_proj_norm1 = integrate.trapezoid((gaus_proj_orbs1) * real_proj_grid ** 2,
+                                                          x=real_proj_grid)
+                    for orb2 in orbs:
+                        type2 = all_orbtype[orb2]
+                        gaus_proj_orbs2 = pseudo_orb * real_proj_data[1][type2]
+                        gaus_proj_norm2 = integrate.trapezoid((gaus_proj_orbs2) * real_proj_grid ** 2,
+                                                              x=real_proj_grid)
+                        ae_overlap += gaus_proj_norm1 * self.Qab[orb1, orb2] * gaus_proj_norm2
+
+                self.orig_radial[orb] = orig_radial / ae_overlap ** (1 / 2)
+            self.recip_orbcoeffs = orbital_coeffs
+            self.cur_radial = self.orig_radial
+            self.recip_pseudo = self.spher_bessel_trans(orbital_coeffs)
+            self.recip_pseudo_grid = self.recip_rad_grid
+
+        else:  # use the pseudo gaussian fit as the initial guess # this version is not normalized with ae
+            self.use_pseudo = False
+            recip_orbcoeffs = np.zeros((self.num_orbs, 9))
+            for orb in range(self.num_orbs):
+                [a, b, c, d, e, f, l] = self.orig_gausparams[orb]
+                [g, h] = [0, 1 / 4]
+
+                # switch to a*e^-bx^2 format form a/b*e^-1/2(x/b)^2 format
+                [a, c, e, g] = [a / b, c / d, e / f, g / h]
+                [b, d, f, h] = 1 / 2 / np.array([b, d, f, h]) ** 2
+                # print("as:", old_params,[a,b,c,d])
+                # change the coeffs so they normalize correctly
+                const = self.gridxyz[0] * self.gridxyz[1] * self.gridxyz[2] / self.vol ** (1 / 2)
+                if self.verbose > 1:
+                    print("volume:", self.vol)
+                    print("const", const)
+                [a, c, e, g] = np.array([a, c, e, g]) * const  # analytical calc
+
+                # convert to reciprocal space
+                # g(k) = ∫j_l(kr)*g(r)*r^2*dr was done in mathematica to get the symbol conversion for analytical calc
+                ak = np.pi ** (1 / 2) * 2 ** (-2 - l) * a * b ** (-3 / 2 - l) * (2 / np.pi) ** (1 / 2)
+                bk = 1 / 4 / b
+                ck = np.pi ** (1 / 2) * 2 ** (-2 - l) * c * d ** (-3 / 2 - l) * (2 / np.pi) ** (1 / 2)
+                dk = 1 / 4 / d
+                ek = np.pi ** (1 / 2) * 2 ** (-2 - l) * e * f ** (-3 / 2 - l) * (2 / np.pi) ** (1 / 2)
+                fk = 1 / 4 / f
+                gk = np.pi ** (1 / 2) * 2 ** (-2 - l) * g * h ** (-3 / 2 - l) * (2 / np.pi) ** (1 / 2)
+                hk = 1 / 4 / h
+
+                [bk, dk, fk, hk] = 1 / (2 * np.array([bk, dk, fk, hk])) ** (1 / 2)
+                [ak, ck, ek, gk] = [ak * bk, ck * dk, ek * fk, gk * hk]
+                recip_orbcoeffs[orb] = np.array([ak, bk, ck, dk, ek, fk, gk, hk, l])
+            self.recip_orbcoeffs = recip_orbcoeffs
+
+        elapsed_time2 = 0
+        elapsed_time3 = 0
+        elapsed_time4 = 0
+
         #self.write_input_file()
         if not start_from_orbnpy:
             if save_orb_converg_info:
@@ -398,34 +502,81 @@ class COGITO(object):
                 all_orb_info["orb_change"] = []
                 all_orb_info["orb_change_periter"] = []
                 all_orb_info["radial_change_periter"] = []
-                all_orb_info["bloch_nrmse_iter"] = []
-                all_orb_info["bloch_nme_iter"] = []
+                all_orb_info["fit_nrmse_iter"] = []
+                all_orb_info["fit_nme_iter"] = []
                 all_orb_info["gaus_fit_error"] = [] # just the error between the gaus+exp fit and gaus fit
-            elapsed_time2 = 0
-            elapsed_time3 = 0
-            for outer in range(num_outer):
-                time1 = time.time()
-                self.converge_orbs_recip(num_steps=num_steps)
-                #self.converge_orbs()
-                time2 = time.time()
-                # Calculate elapsed time
-                elapsed_time2 += time2 - time1
-                print("elapsed time for converged orbs:",elapsed_time2)
-                print("")
-                self.fit_to_atomic_orb(plot_orbs=plot_orbs,orbfactor=orbfactor,outer=outer)
-                time3 = time.time()
-                # Calculate elapsed time
-                elapsed_time3 += time3 - time2
-                print("elapsed time for fitting orbs:",elapsed_time3)
-                print("")
+                all_orb_info["proj_nrmse_iter"] = []
+                all_orb_info["proj_nme_iter"] = []
 
-                if save_orb_converg_info:
-                    # save orbital info
-                    all_orb_info["orb_change_periter"].append(list(self.all_orbloop_info[2]))
-                    all_orb_info["radial_change_periter"].append(list(self.all_orbloop_info[3]))
-                    all_orb_info["bloch_nrmse_iter"].append(list(self.all_orbloop_info[4]))
-                    all_orb_info["bloch_nme_iter"].append(list(self.all_orbloop_info[5]))
-            if save_orb_converg_info:
+            if not wannier_fit:
+                self.use_pseudo = orig_pseudo
+                for outer in range(num_outer):
+                    time1 = time.time()
+                    self.converge_orbs_recip(num_steps=num_steps)
+                    #self.converge_orbs()
+                    time2 = time.time()
+                    # Calculate elapsed time
+                    elapsed_time2 += time2 - time1
+                    print("elapsed time for converged orbs:",elapsed_time2)
+                    print("")
+                    self.fit_to_atomic_orb(plot_orbs=plot_orbs,orbfactor=orbfactor,outer=outer)
+                    time3 = time.time()
+                    # Calculate elapsed time
+                    elapsed_time3 += time3 - time2
+                    print("elapsed time for fitting orbs:",elapsed_time3)
+                    print("")
+
+                    if save_orb_converg_info:
+                        # save orbital info
+                        all_orb_info["orb_change_periter"].append(list(self.all_orbloop_info[2]))
+                        all_orb_info["radial_change_periter"].append(list(self.all_orbloop_info[3]))
+                        all_orb_info["fit_nrmse_iter"].append(list(self.all_orbloop_info[4]))
+                        all_orb_info["fit_nme_iter"].append(list(self.all_orbloop_info[5]))
+
+            else: # than fitting to Wannier orbitals
+                for loop in range(num_outer):
+                    # first project the current orbs onto wfs and optimize
+                    # get all-election orbital overlap
+                    time3 = time.time()
+                    self.get_ae_overlap_info()
+                    # project orbitals on DFT wavefunctions
+                    self.proj_all_kpoints(calc_nrms=False)
+                    # self.optimize_band_set()
+                    time4 = time.time()
+                    elapsed_time4 += time4 - time3
+                    print("elapsed time for projecting orbs:",elapsed_time4)
+
+                    self.use_pseudo = orig_pseudo
+                    if band_opt or orb_opt or orb_orth:  # if not (no optimize and nonorth orbitals)
+                        if not orb_opt:
+                            print(
+                                "WARNING: it is a very bad idea to set orb_opt to False when the optimization occurs before expand_irred_kgrid()!")
+                            print(
+                                "         This is because in expand_irred_kgrid() the orbital overlaps are set by the coefficients.")
+                        self.optimize_band_set(band_opt=band_opt, orb_opt=orb_opt,
+                                               orb_orth=orb_orth)  # doing before expand grid definitely needs orb_opt=True!!!
+
+                    wan_orbs, prim_wangrid = self.make_irred_wannier()
+                    time2 = time.time()
+                    elapsed_time2 += time2 - time4
+                    print("elapsed time for making wannier orbs:",elapsed_time2)
+
+                    self.fit_local_wannier(wan_orbs, prim_wangrid, plot_orbs=plot_orbs,orbfactor=orbfactor,outer=loop)
+                    time3 = time.time()
+                    elapsed_time3 += time3 - time2
+                    print("elapsed time for fitting orbs:",elapsed_time3)
+
+                    if save_orb_converg_info:
+                        # save orbital info
+                        all_orb_info["orb_change_periter"].append(list(self.all_orbloop_info[2]))
+                        all_orb_info["radial_change_periter"].append(list(self.all_orbloop_info[3]))
+                        all_orb_info["fit_nrmse_iter"].append(list(self.all_orbloop_info[4]))
+                        all_orb_info["fit_nme_iter"].append(list(self.all_orbloop_info[5]))
+                        all_orb_info["proj_nrmse_iter"].append(list(self.all_orbloop_info[7]))
+                        all_orb_info["proj_nme_iter"].append(list(self.all_orbloop_info[8]))
+                self.use_pseudo = orig_pseudo
+
+            if save_orb_converg_info and not orig_pseudo:
                 all_orb_info["orb_type"] = list(np.char.add(self.elements[self.orbatomnum],np.char.add("-",np.char.add(self.exactorbtype,np.char.add("-",np.array(self.orbatomnum,dtype=str))))))
                 all_orb_info["orb_rad"]=list(self.all_orbloop_info[0])
                 all_orb_info["orb_change"]=list(self.all_orbloop_info[1])
@@ -436,11 +587,12 @@ class COGITO(object):
                 with open(self.directory+"orb_converg_info"+self.tag+".json", "w") as f:
                     json.dump(all_orb_info, f, indent=2)
                 #print(all_orb_info)
-                #print("average bloch nsmre per loop:", np.average(all_orb_info["bloch_nrmse_iter"],axis=1))
-                #print("average bloch nme per loop:", np.average(all_orb_info["bloch_nme_iter"],axis=1))
+                #print("average bloch nsmre per loop:", np.average(all_orb_info["fit_nrmse_iter"],axis=1))
+                #print("average bloch nme per loop:", np.average(all_orb_info["fit_nme_iter"],axis=1))
             # write out orbital and input files
             self.write_recip_rad_orbs()
             self.write_input_file()
+
         else: 
             self.read_recip_rad_orbs()
             elapsed_time2 = 0
@@ -451,6 +603,7 @@ class COGITO(object):
             print("")
 
 
+        time3 = time.time()
         # get all-election orbital overlap
         #self.get_Qab()
         self.get_ae_overlap_info()
@@ -460,7 +613,7 @@ class COGITO(object):
 
         time4 = time.time()
         # Calculate elapsed time
-        elapsed_time4 = time4 - time3
+        elapsed_time4 += time4 - time3
         print("elapsed time for projecting orbs:",elapsed_time4)
         print("")
         #self.optimize_band_set()
@@ -473,8 +626,8 @@ class COGITO(object):
 
         # expand the irreducible grid to a full reducible grid
         if irreducible_grid == True:
-            self.expand_irred_kgrid()
-        
+            self.expand_irred_kgrid(save_only_inred=False)
+
         #if band_opt or orb_opt or orb_orth: # if not (no optimize and nonorth orbitals)
         #    self.optimize_band_set(band_opt=band_opt,orb_opt=orb_opt,orb_orth=orb_orth)
         
@@ -494,37 +647,7 @@ class COGITO(object):
                 orbs = [self.elements, ["s", "p"]]
             self.plot_projectedDOS(orbs)
 
-        #self.make_fit_wannier()
-        
-        for loop in range(0):
-            self.make_fit_wannier()
-            if irreducible_grid:
-                print("reduced the kpoint grid back")
-                self.num_kpts = self.irred_num_kpts
-                self.kpoints = self.irred_kpoints
-                #self.mnkcoefficients = self.irred_mnkcoefficients
-                self.eigval = self.irred_eigval
-                #self.mixed_eigval = all_reduc_newval
-                self.gpoints = self.irred_gpoints
-                #self.total_nrms = new_nrms
-                #self.all_band_spillage = self.irred_all_band_spillage
-                self.recip_WFcoeffs = self.irred_recip_WFcoeffs
-                self.kpt_weights = self.irred_kpt_weights
-                #self.Sij = self.irred_Sij
-                #self.Aij = self.irred_Aij
-            self.write_recip_rad_orbs()
-            # project orbitals on DFT wavefunctions
-            self.get_ae_overlap_info()
-            self.proj_all_kpoints()
-            #self.optimize_band_set()
-            
-            # expand the irreducible grid to a full reducible grid
-            if irreducible_grid == True:
-                self.expand_irred_kgrid()
 
-            self.optimize_band_set()
-            #self.make_fit_wannier()
-        
         # finally generate the kdep hamiltonians and the real dep TB params
         self.get_hamiltonian()
         self.get_TBparameter(file_type)
@@ -540,7 +663,10 @@ class COGITO(object):
         print("finished!")
         print("")
         print("elapsed time for initialization:",elapsed_time1)
-        print("elapsed time for converged orbs:",elapsed_time2)
+        if not wannier_fit:
+            print("elapsed time for converged orbs:",elapsed_time2)
+        else:
+            print("elapsed time for making wannier orbs:",elapsed_time2)
         print("elapsed time for fitting orbs:",elapsed_time3)
         print("elapsed time for projecting orbs:",elapsed_time4)
         print("elapsed time for optimize and symmetry:",elapsed_time5)
@@ -1657,7 +1783,7 @@ class COGITO(object):
                 atomic_WF[orb] = radial_part*angular_part
                 
                 og_radial[orb][simple_rad<new_cutrad] = interpolate.griddata(pseudo_rad,pseudo_data,simple_rad[simple_rad<new_cutrad],method='cubic', fill_value=pseudo_data[0])
-                if not self.use_pseudo or True:
+                if not self.use_pseudo:
                     og_radial[orb][simple_rad>=new_cutrad] = a*simple_rad[simple_rad>=new_cutrad]**l*np.exp(-b*simple_rad[simple_rad>=new_cutrad]**2) 
                     #og_radial[orb][-1] = 0 # still bound to zero
                     '''
@@ -3382,6 +3508,7 @@ class COGITO(object):
         else:
             num_loop = 4
         #print("num loops:",num_loop)
+        #num_loop=10
          
         import time
         
@@ -3537,7 +3664,12 @@ class COGITO(object):
                 max_pos = np.amax(simporb)
                 test_cut_ind = np.argmin(np.abs(simporb[max_pos_ind:]-max_pos/3))
                 test_cutoff = simprad[max_pos_ind:][test_cut_ind]
-                sixth_cutoff = simprad[max_pos_ind:][np.argmin(np.abs(simporb[max_pos_ind:]-max_pos/1.5))]
+                # control if it's too small from an s orbitals
+                if test_cutoff < 1.0:
+                    test_cutoff = test_cutoff**(1/8)
+                sixth_cutoff =  simprad[max_pos_ind:][np.argmin(np.abs(simporb[max_pos_ind:]-max_pos/1.5))]
+                if sixth_cutoff < 1.0:
+                    sixth_cutoff = sixth_cutoff**(1/4)
                 cutoff = self.cutoff_rad[atom]*0.9+np.tanh((self.init_orb_energy[orbgroup[0]]+8)/5)*0.5#self.cutoff_rad[atom]*0.8#**(1/2)#*1.4
                 #print("testing cutoffs:",test_cutoff,cutoff)
                 if test_cutoff > cutoff:
@@ -3562,16 +3694,21 @@ class COGITO(object):
                     min_cut = expcutoff/4
                 l=orb_to_l[orbperatom]
                 if no_node:
-                    notbad_low = (radunk > 0) | (good_min_rad > test_cutoff) | (good_min_rad < test_cutoff/2) # remove points that are below zero close to the R=0 if no node
+                    notbad_low = (radunk > 0) | (good_min_rad < test_cutoff/2) | (good_min_rad > test_cutoff)  # remove points that are below zero close to the R=0 if no node
                 else:
                     notbad_low = np.ones(len(radunk), dtype=bool)
                 x = good_min_rad[notbad_low] #[good_min_rad<=test_cutoff]
                 y = radunk[notbad_low] #[good_min_rad<=test_cutoff]
 
+
                 truemaxval = np.abs(np.average(y[np.abs(x-max_rad) < 0.1/(l+1)]))#,weights = weights[good_min_rad<=cutoff][np.abs(x-max_rad) < 0.1/(l+1)]))
-                other_maxval = np.abs(np.average(np.sort(y[x<max_rad+0.5])[::-1][100:200]))
+                # filter any bad values
+                filtered_y = y[(y>0) & (y<2*truemaxval)]
+                filtered_x = x[(y>0) & (y<2*truemaxval)]
+                truemaxval = np.abs(np.average(filtered_y[np.abs(filtered_x-max_rad) < 0.1/(l+1)]))
+                other_maxval = np.abs(np.average(np.sort(y[x<max_rad+0.5])[::-1][100:300]))
                 print("possible maxes",truemaxval,other_maxval,max_rad+0.5)
-                if truemaxval < other_maxval:
+                if truemaxval < other_maxval/4:
                     truemaxval = other_maxval
                     if truemaxval > 0.002:
                         truemaxval = 0.002
@@ -3591,9 +3728,11 @@ class COGITO(object):
 
                 new_fitting_func = partial(fit_variable_func,l=l)
                 test_sixth = self.cutoff_rad[atom] * 0.8 + np.tanh((self.init_orb_energy[orbgroup[0]] + 8) / 5) * 0.4
-                sixth_cutoff = sixth_cutoff*0.8+test_sixth*0.2
-                if sixth_cutoff > test_sixth:
-                    sixth_cutoff = sixth_cutoff*0.25+test_sixth*0.75
+                if sixth_cutoff < test_sixth:
+                    sixth_cutoff = sixth_cutoff*0.8+test_sixth*0.2
+                #if sixth_cutoff > test_sixth:
+                #    print("Changing sixth_cutoff:",sixth_cutoff, test_sixth)
+                #    sixth_cutoff = sixth_cutoff*0.25+test_sixth*0.75
                 zero_cutoff = sixth_cutoff*0.9 + 1.1
                 print("test cutoff:",zero_cutoff,test_sixth,sixth_cutoff)
 
@@ -3602,11 +3741,20 @@ class COGITO(object):
                 #vary_wght = np.sum(weights[good_min_rad > zero_cutoff])/(outer+1) # use more for large systems with more points
                 init_weight = weights[notbad_low] #np.append(weights[notbad_low],np.linspace(0,vary_wght,10)) #[vary_wght, vary_wght*4, vary_wght*8,vary_wght*12,vary_wght*16])
 
+
+                # remove any points which are either 20% of truemaxval higher than the pseudo orbital or 50% of the pseudo orb at each r higher.
+                pseudo_orb = func_for_rad(x,pa,pb,pc,pd,pe,pf,pg,ph,l=l)
+
+                #notbad_high = (y < pseudo_orb + truemaxval*0.15*(outer+1)**(1/4)) & (y < pseudo_orb*1.2*(outer+1)**(1/4)) & (y > pseudo_orb - truemaxval*0.25*(outer+1)**(1/4))
+                #y = y[notbad_high]
+                #init_weight = init_weight[notbad_high]
+                #x = x[notbad_high]
+
                 x = np.append(x, [zero_cutoff + .0, zero_cutoff + 0.25, zero_cutoff + 0.5, zero_cutoff + 0.75,zero_cutoff + 1.0,zero_cutoff + 1.25, zero_cutoff + 1.5, zero_cutoff + 1.75,zero_cutoff + 2.0])
                 y = np.append(y, [0, 0, 0, 0, 0,0,0,0,0])
                 high_weight =  np.sum(weights[(good_min_rad > test_sixth*0.5+sixth_cutoff*0.3) & (np.abs(radunk) > truemaxval/4)])
                 low_weights = np.sum(weights[(good_min_rad < zero_cutoff)])# & (good_min_rad > 0.5)])
-                vary_wght =(low_weights)/200/min((outer+1)**(3/2),6) # use more for large systems with more points
+                vary_wght =(low_weights)/100/min((outer+1)**(3/2),6) # use more for large systems with more points
                 vary_wght = vary_wght * (0.001/truemaxval)**(1/4) # adjust for if normalization is different (and curve is just naturally lower)
                 init_weight = np.append(init_weight,[vary_wght/2, vary_wght*1, vary_wght*2,vary_wght*4,vary_wght*8,vary_wght*16, vary_wght*24,vary_wght*32,vary_wght*48])
 
@@ -3618,10 +3766,11 @@ class COGITO(object):
 
                 # add the psuedo orbital as a loose guide
                 low_weights = np.sum(weights[(good_min_rad < zero_cutoff+3)])# & (good_min_rad > 0.5)])
+                low_weights = low_weights * (0.001/truemaxval) # adjust for if normalization is different (and curve is just naturally lower)
                 new_rad = np.linspace(0,zero_cutoff+3,100)
                 #new_rad = np.append(new_rad[:15],new_rad)
                 just_one = func_for_rad(new_rad,pa,pb,pc,pd,pe,pf,pg,ph,l=l)
-                pseudo_weights = np.ones(len(new_rad))/1000/(outer+1)**(2)*low_weights  #*np.sum(weights[good_min_rad > 0.1]) #*((num_loop)/(loop+1))**(1/2)
+                pseudo_weights = np.ones(len(new_rad))/500/(outer+1)**(3/2)*low_weights  #*np.sum(weights[good_min_rad > 0.1]) #*((num_loop)/(loop+1))**(1/2)
                 pseudo_weights[:15] = pseudo_weights[:15]*2
                 x = np.append(x, new_rad)
                 y = np.append(y, just_one)
@@ -3638,7 +3787,15 @@ class COGITO(object):
                 else:
                     low_bounds = [-1.0, expcutoff * 0.05, 0.000001, expcutoff * 0.05, 1, test_cutoff / 10]
                     high_bounds = [3.0,expcutoff*3,3,expcutoff*3,max_decay, test_cutoff*min(0.7+outer/4,1.2)]
-                popt,pcov = curve_fit(new_fitting_func,x,y,p0=pinit,sigma=sig,bounds=(low_bounds,high_bounds),ftol=0.000001, xtol=0.000001,method="trf",max_nfev=5000)
+
+                pseudo_orb = func_for_rad(x, pa, pb, pc, pd, pe, pf, pg, ph, l=l)
+                # also get residual standard deviation
+                residuals = np.abs(y - pseudo_orb)
+                median = np.average(residuals, weights=init_weight)
+                avg_errordev = np.average(np.abs(residuals - median),weights=init_weight)
+                print("avg error deviation:", avg_errordev)
+
+                popt,pcov = curve_fit(new_fitting_func,x,y,p0=pinit,sigma=sig,bounds=(low_bounds,high_bounds),ftol=0.000001, xtol=0.000001,method="trf",max_nfev=5000)#,loss="huber",f_scale=avg_errordev*50*(outer+1)**(5/4))
                 [a_n,b_n,c_n,d_n,e_n,f_n] = popt
                 print("new fit:",popt)
                 orbgroup_fancyparams[group_ind] = [a_n,b_n,c_n,d_n,e_n,f_n,l]
@@ -4646,44 +4803,12 @@ class COGITO(object):
             max_orbmixing_allbands[kpt] = np.amax(np.abs(orb_mixing))
             if self.verbose > 0:
                 print("orb mixing of all bands:", len(coeff), np.amax(np.abs(orb_mixing)))
-
-
-            '''
-            orth_extra_wf = np.zeros([len(DFT_wavefunc), len(DFT_wavefunc[0])], dtype=np.complex128)
-            # include second loop to exclude the residual wavefunction in the periodic_WFs when calculating coeffs
-            print("check how coefficients update:")
-            for con_coeff in range(3):
-                WFs_forcoeffs = DFT_wavefunc - orth_extra_wf
-                proj_extra = self.get_aecoefficients(adjusted_orbs, orth_extra_wf, ae_overlap,kpt,recip=True)
-                coeff = self.get_aecoefficients(adjusted_orbs, WFs_forcoeffs, ae_overlap,kpt,recip=True)
-                
-                #orth_extra_wf = np.zeros([self.num_bands, num_gpnts], dtype=np.complex128)  # different for recip
-                #orb_coeff = np.sum(adjusted_orbs[None,:,:]*coeff[:,:,None],axis=1) 
-                
-                spillage = np.zeros(self.max_band)
-                orth_orb_wfs = np.zeros(DFT_wavefunc.shape,dtype=np.complex128)
-                for band in range(self.max_band):
-                    trueWF = DFT_wavefunc[band]
-                    orb_coeff = np.zeros(trueWF.shape, dtype=np.complex128)
-                    for temporb in range(self.num_orbs):
-                        orbWF = adjusted_orbs[temporb]#orth_orbs
-                        orb_coeff += orbWF * coeff[band][temporb]
-                    orth_orb_wfs[band] = orb_coeff
-                    orth_extra_wf[band] = trueWF - orb_coeff
-                    
-                    spillage[band] = np.matmul(np.conj(coeff[band]), np.matmul(ae_overlap, coeff[band].transpose())).real
-                    if (spillage[band] > 0.3) & (spillage[band] < 0.8):
-                        print(band,spillage[band])
-                        print(proj_extra)
-            '''
-            #coeff = np.array(self.get_aecoefficients(adjusted_orbs, DFT_wavefunc, ae_overlap, kpt,recip=True))
-            
             
 
             self.mnkcoefficients[kpt] = coeff
 
             #reconstruct the LCAO wavefunction and find error
-            if calc_nrms == True:
+            if calc_nrms:
                 orth_extra_wf = np.zeros(DFT_wavefunc.shape,dtype=np.complex128)
                 trueWFs = np.zeros(DFT_wavefunc.shape,dtype=np.complex128)
                 orth_orb_wfs = np.zeros(DFT_wavefunc.shape,dtype=np.complex128)
@@ -5259,26 +5384,27 @@ class COGITO(object):
                 else:  # orbs are nonorth and not orb optimized
                     self.mnkcoefficients[kpt][include_lowband] = new_coeff
 
-    def expand_irred_kgrid(self):
+    def find_irred_to_red(self):
         """
-        This function does a couple things:
-        1. Finds the kpoints of the reducible grid and the coorespond symmetry operations to get them from the irreducible points.
-        2. Creates the eigenvalues, eigenvectors, and overlaps matrices for the new reducible kpoint grid.
+        This function finds the kpoints of the reducible grid and the coorespond symmetry operations to get them from the irreducible points.
+        Returns:
+
         """
-        
+
         ## -- 1 -- ##
         from pymatgen.core import Structure
         from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
-        np.set_printoptions(precision = 15,suppress=True)
+        np.set_printoptions(precision=15, suppress=True)
         # creating the k point grid - no weights b/c it is not the reduced form of the kpoint grid
-        
+
         # get irreducible kpts and their weights
         irrec_kpts_count = self.kpt_weights
-        irrec_kpts = self.kpoints#,decimals=14)
-        #print(irrec_kpts)
-        
+        irrec_kpts = self.kpoints  # ,decimals=14)
+        # print(irrec_kpts)
+
         # get symmetry operations
-        structure = Structure.from_file(self.directory + 'POSCAR') # TODO: make sure that the symmetry ops are correct for AFM
+        structure = Structure.from_file(
+            self.directory + 'POSCAR')  # TODO: make sure that the symmetry ops are correct for AFM
         # add the magnetic properties
         print("spin polar?", self.spin_polar)
         if self.spin_polar:
@@ -5289,72 +5415,74 @@ class COGITO(object):
             print(tot_magmoms)
             site_prop = {}
             site_prop['magmom'] = tot_magmoms
-            structure = Structure(structure.lattice,structure.species,structure.frac_coords,site_properties=site_prop)
+            structure = Structure(structure.lattice, structure.species, structure.frac_coords,
+                                  site_properties=site_prop)
 
         # pass "structure" to define class into "space"
-        space = SpacegroupAnalyzer(structure,symprec=self.sym_prec,angle_tolerance=-1.0)
-        point_groups = space.get_symmetry_operations()#get_point_group_operations()
-        cart_point_groups = space.get_symmetry_operations(cartesian=True)#get_point_group_operations(cartesian=True)
-        operations = np.zeros((len(point_groups),4,4),dtype=np.float64)
-        cart_operations = np.zeros((len(point_groups),4,4),dtype=np.float64)
+        space = SpacegroupAnalyzer(structure, symprec=self.sym_prec, angle_tolerance=-1.0)
+        point_groups = space.get_symmetry_operations()  # get_point_group_operations()
+        cart_point_groups = space.get_symmetry_operations(cartesian=True)  # get_point_group_operations(cartesian=True)
+        operations = np.zeros((len(point_groups), 4, 4), dtype=np.float64)
+        cart_operations = np.zeros((len(point_groups), 4, 4), dtype=np.float64)
         for ind in range(len(point_groups)):
-            operations[ind] = point_groups[ind].affine_matrix #[:3,:3]
-            cart_operations[ind] = cart_point_groups[ind].affine_matrix #[:3,:3]
-        #print("check sym:",operations)
-        #print(cart_operations)
+            operations[ind] = point_groups[ind].affine_matrix  # [:3,:3]
+            cart_operations[ind] = cart_point_groups[ind].affine_matrix  # [:3,:3]
+        # print("check sym:",operations)
+        # print(cart_operations)
         if self.verbose > 0:
-            print("cart symmetry opts:",cart_operations)
-            print("prim symmetry opts:",operations)
+            print("cart symmetry opts:", cart_operations)
+            print("prim symmetry opts:", operations)
             print(len(cart_operations))
-        
-        #find redicable kpts
+
+        # find redicable kpts
         # kpoint on edges of keeping: [0.5,0.5,0.5] [0.5,-0.5,0.5] [0.5,-0.5,-0.5] [
-        reduc_kpts = [[0.,0.,0.]] #requires the first point is Gamma point
-        kpt_shifts = [[0.,0.,0.]]
+        reduc_kpts = [[0., 0., 0.]]  # requires the first point is Gamma point
+        kpt_shifts = [[0., 0., 0.]]
         symopt_ind = [0]
         reduc_toir = [0]
-        
-        kprim1 = np.sort(np.around(np.abs(irrec_kpts[:,0]),decimals=6))
-        kprim2 = np.sort(np.around(np.abs(irrec_kpts[:,1]),decimals=6))
-        kprim3 = np.sort(np.around(np.abs(irrec_kpts[:,2]),decimals=6))
-        
+
+        kprim1 = np.sort(np.around(np.abs(irrec_kpts[:, 0]), decimals=6))
+        kprim2 = np.sort(np.around(np.abs(irrec_kpts[:, 1]), decimals=6))
+        kprim3 = np.sort(np.around(np.abs(irrec_kpts[:, 2]), decimals=6))
+
         min_div1 = kprim1[kprim1 != 0][0] if len(kprim1[kprim1 != 0]) > 0 else 1
-        min_div2 = kprim2[kprim2 != 0][0] if len(kprim2[kprim2 != 0]) > 0 else 1 
+        min_div2 = kprim2[kprim2 != 0][0] if len(kprim2[kprim2 != 0]) > 0 else 1
         min_div3 = kprim3[kprim3 != 0][0] if len(kprim3[kprim3 != 0]) > 0 else 1
-        
-        max1 = np.around(1/kprim1[kprim1 != 0][0],decimals=0) if len(kprim1[kprim1 != 0]) > 0 else 1 
-        max2 = np.around(1/kprim2[kprim2 != 0][0],decimals=0) if len(kprim2[kprim2 != 0]) > 0 else 1 
-        max3 = np.around(1/kprim3[kprim3 != 0][0],decimals=0) if len(kprim3[kprim3 != 0]) > 0 else 1 
-        
-        #print(min_div1,min_div2,min_div3)
-        #min_div1 = np.amin(np.abs(irrec_kpts[:,0])[np.abs(irrec_kpts[:,0]) > 0.000000001])
-        #min_div2 = np.amin(np.abs(irrec_kpts[:,1])[np.abs(irrec_kpts[:,1]) > 0.000000001])
-        #min_div3 = np.amin(np.abs(irrec_kpts[:,2])[np.abs(irrec_kpts[:,2]) > 0.000000001])
-        #print("min divides",min_div1,min_div2,min_div3)
-        for ir_ind,ir_kpt in enumerate(irrec_kpts[1:]):
+
+        max1 = np.around(1 / kprim1[kprim1 != 0][0], decimals=0) if len(kprim1[kprim1 != 0]) > 0 else 1
+        max2 = np.around(1 / kprim2[kprim2 != 0][0], decimals=0) if len(kprim2[kprim2 != 0]) > 0 else 1
+        max3 = np.around(1 / kprim3[kprim3 != 0][0], decimals=0) if len(kprim3[kprim3 != 0]) > 0 else 1
+
+        # print(min_div1,min_div2,min_div3)
+        # min_div1 = np.amin(np.abs(irrec_kpts[:,0])[np.abs(irrec_kpts[:,0]) > 0.000000001])
+        # min_div2 = np.amin(np.abs(irrec_kpts[:,1])[np.abs(irrec_kpts[:,1]) > 0.000000001])
+        # min_div3 = np.amin(np.abs(irrec_kpts[:,2])[np.abs(irrec_kpts[:,2]) > 0.000000001])
+        # print("min divides",min_div1,min_div2,min_div3)
+        for ir_ind, ir_kpt in enumerate(irrec_kpts[1:]):
             # generate all possible kpoints with the symmetry operations
-            all_kpts = np.zeros((len(point_groups),3))
-            all_shifts = np.zeros((len(point_groups),3))
+            all_kpts = np.zeros((len(point_groups), 3))
+            all_shifts = np.zeros((len(point_groups), 3))
             for ind in range(len(point_groups)):
-                sym_opt = np.linalg.inv(operations[ind][:3,:3])
-                try_kpt = np.dot(sym_opt.T,ir_kpt)
+                sym_opt = np.linalg.inv(operations[ind][:3, :3])
+                try_kpt = np.dot(sym_opt.T, ir_kpt)
                 shift = np.zeros(3)
-                #shift[np.abs(try_kpt) <= 0.5] = 0 # shift back into primitive reciprocal cell if out
-                shift[np.around(try_kpt,decimals=8)< -0.5] = 1
-                shift[np.around(try_kpt,decimals=8) > 0.5] = -1
+                # shift[np.abs(try_kpt) <= 0.5] = 0 # shift back into primitive reciprocal cell if out
+                shift[np.around(try_kpt, decimals=8) < -0.5] = 1
+                shift[np.around(try_kpt, decimals=8) > 0.5] = -1
                 temp_kpt = try_kpt + shift
-                
-                #shift anything on the negative faces to the positive faces
-                #print(np.around(temp_kpt,decimals=4) == -0.5)
-                if (np.around(temp_kpt,decimals=8) == -0.5).any(): # determine if the point is on the positive or negative side of the cube
+
+                # shift anything on the negative faces to the positive faces
+                # print(np.around(temp_kpt,decimals=4) == -0.5)
+                if (np.around(temp_kpt,
+                              decimals=8) == -0.5).any():  # determine if the point is on the positive or negative side of the cube
                     num_trues = 0
                     while num_trues < 2:
-                        #print("edge point",temp_kpt)
-                        temp_kpt = np.around(temp_kpt,decimals=12)
-                        angle_xy = np.arctan2(temp_kpt[0],temp_kpt[1])/np.pi*180
-                        angle_yz = np.arctan2(temp_kpt[1],temp_kpt[2])/np.pi*180
-                        angle_zx = np.arctan2(temp_kpt[2],temp_kpt[0])/np.pi*180
-                        #print(angle_xy,angle_yz,angle_zx)
+                        # print("edge point",temp_kpt)
+                        temp_kpt = np.around(temp_kpt, decimals=12)
+                        angle_xy = np.arctan2(temp_kpt[0], temp_kpt[1]) / np.pi * 180
+                        angle_yz = np.arctan2(temp_kpt[1], temp_kpt[2]) / np.pi * 180
+                        angle_zx = np.arctan2(temp_kpt[2], temp_kpt[0]) / np.pi * 180
+                        # print(angle_xy,angle_yz,angle_zx)
                         in_xy = angle_xy < 135 and angle_xy > -45
                         in_yz = angle_yz < 135 and angle_yz > -45
                         in_zx = angle_zx < 135 and angle_zx > -45
@@ -5365,74 +5493,79 @@ class COGITO(object):
                             num_trues += 1
                         if in_zx == True:
                             num_trues += 1
-                        #print(in_xy,in_yz,in_zx,num_trues)
-                        if num_trues < 2: # shift the point to a positive face
+                        # print(in_xy,in_yz,in_zx,num_trues)
+                        if num_trues < 2:  # shift the point to a positive face
                             shift[np.argmin(temp_kpt)] += 1
                         temp_kpt = try_kpt + shift
-                
-                all_kpts[ind] = np.around(try_kpt + shift,decimals=14)
+
+                all_kpts[ind] = np.around(try_kpt + shift, decimals=14)
                 all_shifts[ind] = shift
             # select only the unique points and save which symmetry operation they used
-            new_kpts,new_kpt_ind = np.unique(np.around(all_kpts,decimals=10),axis=0,return_index=True)#
+            new_kpts, new_kpt_ind = np.unique(np.around(all_kpts, decimals=10), axis=0, return_index=True)  #
             # also only select point which are on the right grid
-            fits_grid = (((np.abs(new_kpts[:,0])+0.00001)%min_div1) < 0.0001) & (((np.abs(new_kpts[:,1])+0.00001)%min_div2) < 0.0001) & (((np.abs(new_kpts[:,2])+0.00001)%min_div3) < 0.0001)
-            #print(new_kpts[:,0]%min_div1,new_kpts[:,1]%min_div2,new_kpts[:,2]%min_div3)
+            fits_grid = (((np.abs(new_kpts[:, 0]) + 0.00001) % min_div1) < 0.0001) & (
+                        ((np.abs(new_kpts[:, 1]) + 0.00001) % min_div2) < 0.0001) & (
+                                    ((np.abs(new_kpts[:, 2]) + 0.00001) % min_div3) < 0.0001)
+            # print(new_kpts[:,0]%min_div1,new_kpts[:,1]%min_div2,new_kpts[:,2]%min_div3)
             new_kpts = new_kpts[fits_grid]
             new_kpt_ind = new_kpt_ind[fits_grid]
-            symopt_ind = np.append(symopt_ind,new_kpt_ind)
-            reduc_toir = np.append(reduc_toir,np.ones(len(new_kpt_ind))*(ir_ind+1))
-            reduc_kpts = np.append(reduc_kpts,all_kpts[new_kpt_ind],axis=0)
-            kpt_shifts = np.append(kpt_shifts,all_shifts[new_kpt_ind],axis=0)
-            #print(new_kpts,len(new_kpts))
-            
+            symopt_ind = np.append(symopt_ind, new_kpt_ind)
+            reduc_toir = np.append(reduc_toir, np.ones(len(new_kpt_ind)) * (ir_ind + 1))
+            reduc_kpts = np.append(reduc_kpts, all_kpts[new_kpt_ind], axis=0)
+            kpt_shifts = np.append(kpt_shifts, all_shifts[new_kpt_ind], axis=0)
+            # print(new_kpts,len(new_kpts))
+
             # check that the kpoints have the same multiplicity as expected
             total_kpts = 1331
             if self.verbose > 0:
-                if len(new_kpt_ind) != int(np.around(irrec_kpts_count[ir_ind+1]*total_kpts,decimals=0)):
-                    print("did not find the correct number of reducible kpoints!",len(new_kpt_ind),irrec_kpts_count[ir_ind+1]*total_kpts)
+                if len(new_kpt_ind) != int(np.around(irrec_kpts_count[ir_ind + 1] * total_kpts, decimals=0)):
+                    print("did not find the correct number of reducible kpoints!", len(new_kpt_ind),
+                          irrec_kpts_count[ir_ind + 1] * total_kpts)
                     print(ir_kpt)
                     print(new_kpts)
-                    #print(new_kpts-all_shifts[new_kpt_ind])
+                    # print(new_kpts-all_shifts[new_kpt_ind])
                 else:
-                    print("successfully found the correct number of reducible kpoints!",len(new_kpt_ind),irrec_kpts_count[ir_ind+1]*total_kpts)
+                    print("successfully found the correct number of reducible kpoints!", len(new_kpt_ind),
+                          irrec_kpts_count[ir_ind + 1] * total_kpts)
                     print(ir_kpt)
                     print(new_kpts)
 
         cart_red_kpt = _red_to_cart((self.b_vecs[0], self.b_vecs[1], self.b_vecs[2]), reduc_kpts)
-        #print(reduc_kpts)
-        reduc_toir = np.array(reduc_toir,dtype=np.int_)
+        # print(reduc_kpts)
+        reduc_toir = np.array(reduc_toir, dtype=np.int_)
         num_reduc = len(reduc_toir)
         if self.verbose > -1:
-            print("num kpts reconstructed from irred:",num_reduc)
-            
+            print("num kpts reconstructed from irred:", num_reduc)
+
         # also include time symmetry
         # for each of the original point check if there is an opposite, if not, add one a label as same symmetry operation but list things as being time sym or not
         is_opposite = np.full((num_reduc), False)
-        old_kpts =np.around(copy.deepcopy(reduc_kpts),decimals=14)
-        rndold_kpts =np.around(copy.deepcopy(reduc_kpts),decimals=10)
+        old_kpts = np.around(copy.deepcopy(reduc_kpts), decimals=14)
+        rndold_kpts = np.around(copy.deepcopy(reduc_kpts), decimals=10)
         new_red_kpts = copy.deepcopy(reduc_kpts)
-        true_numkpt = max1*max2*max3
-        
-        if num_reduc != true_numkpt: # try time symmetry if the number of kpoint is not already correct; if self.spin_polar == False:
+        true_numkpt = max1 * max2 * max3
+
+        if num_reduc != true_numkpt:  # try time symmetry if the number of kpoint is not already correct; if self.spin_polar == False:
             for kind, red_kpt in enumerate(old_kpts):
                 opp_kpt = -red_kpt
                 # check that the opposite kpoint in not on the negative surface of the cube
 
-                #shift anything on the negative faces to the positive faces
-                #print(temp_kpt)
+                # shift anything on the negative faces to the positive faces
+                # print(temp_kpt)
                 shift = np.zeros(3)
                 try_kpt = opp_kpt
                 temp_kpt = copy.deepcopy(opp_kpt)
-                #print(np.around(temp_kpt,decimals=4) == -0.5)
-                if (np.around(temp_kpt,decimals=8) == -0.5).any(): # determine if the point is on the positive or negative side of the cube
+                # print(np.around(temp_kpt,decimals=4) == -0.5)
+                if (np.around(temp_kpt,
+                              decimals=8) == -0.5).any():  # determine if the point is on the positive or negative side of the cube
                     num_trues = 0
                     while num_trues < 2:
-                        #print("edge point",temp_kpt)
-                        temp_kpt = np.around(temp_kpt,decimals=12)
-                        angle_xy = np.arctan2(temp_kpt[0],temp_kpt[1])/np.pi*180
-                        angle_yz = np.arctan2(temp_kpt[1],temp_kpt[2])/np.pi*180
-                        angle_zx = np.arctan2(temp_kpt[2],temp_kpt[0])/np.pi*180
-                        #print(angle_xy,angle_yz,angle_zx)
+                        # print("edge point",temp_kpt)
+                        temp_kpt = np.around(temp_kpt, decimals=12)
+                        angle_xy = np.arctan2(temp_kpt[0], temp_kpt[1]) / np.pi * 180
+                        angle_yz = np.arctan2(temp_kpt[1], temp_kpt[2]) / np.pi * 180
+                        angle_zx = np.arctan2(temp_kpt[2], temp_kpt[0]) / np.pi * 180
+                        # print(angle_xy,angle_yz,angle_zx)
                         in_xy = angle_xy < 135 and angle_xy > -45
                         in_yz = angle_yz < 135 and angle_yz > -45
                         in_zx = angle_zx < 135 and angle_zx > -45
@@ -5443,9 +5576,9 @@ class COGITO(object):
                             num_trues += 1
                         if in_zx == True:
                             num_trues += 1
-                        #print(in_xy,in_yz,in_zx,num_trues)
-                        if num_trues < 2: # shift the point to a positive face
-                            #print(np.argmin(temp_kpt))
+                        # print(in_xy,in_yz,in_zx,num_trues)
+                        if num_trues < 2:  # shift the point to a positive face
+                            # print(np.argmin(temp_kpt))
                             shift[np.argmin(temp_kpt)] += 1
                         temp_kpt = try_kpt + shift
                 opp_kpt = try_kpt + shift
@@ -5471,51 +5604,68 @@ class COGITO(object):
                     if num_trues < 2: # is on a negative face
                         negface = True
                 '''
-                #if negface == False:
-                rnd_kpt = np.around(opp_kpt,decimals=10)
-                in_opposite = (rndold_kpts[:,0] == rnd_kpt[0]) & (rndold_kpts[:,1] == rnd_kpt[1]) & (rndold_kpts[:,2] == rnd_kpt[2])
+                # if negface == False:
+                rnd_kpt = np.around(opp_kpt, decimals=10)
+                in_opposite = (rndold_kpts[:, 0] == rnd_kpt[0]) & (rndold_kpts[:, 1] == rnd_kpt[1]) & (
+                            rndold_kpts[:, 2] == rnd_kpt[2])
                 opp_kpt_inold = np.arange(num_reduc)[in_opposite]
-                #print(rnd_kpt)
-                #print(opp_kpt_inold)
-                #print(old_kpts[opp_kpt_inold])
-                #print(len(opp_kpt_inold))
-                if len(opp_kpt_inold) == 0: # no point which is opposite
-                    new_red_kpts=np.append(new_red_kpts,[opp_kpt],axis=0)
-                    is_opposite=np.append(is_opposite,True)
-                    symopt_ind=np.append(symopt_ind,symopt_ind[kind])
-                    reduc_toir=np.append(reduc_toir,reduc_toir[kind])
-                    kpt_shifts=np.append(kpt_shifts,[kpt_shifts[kind]-shift],axis=0)
-                #else:
+                # print(rnd_kpt)
+                # print(opp_kpt_inold)
+                # print(old_kpts[opp_kpt_inold])
+                # print(len(opp_kpt_inold))
+                if len(opp_kpt_inold) == 0:  # no point which is opposite
+                    new_red_kpts = np.append(new_red_kpts, [opp_kpt], axis=0)
+                    is_opposite = np.append(is_opposite, True)
+                    symopt_ind = np.append(symopt_ind, symopt_ind[kind])
+                    reduc_toir = np.append(reduc_toir, reduc_toir[kind])
+                    kpt_shifts = np.append(kpt_shifts, [kpt_shifts[kind] - shift], axis=0)
+                # else:
                 #    print("didn't pass negface:",opp_kpt)
 
         reduc_kpts = new_red_kpts
         num_reduc = len(reduc_toir)
         cart_red_kpt = _red_to_cart((self.b_vecs[0], self.b_vecs[1], self.b_vecs[2]), reduc_kpts)
         if self.verbose > -1:
-            print("num kpts reconstructed after time symmetry:",num_reduc)
-            #print(reduc_kpts[1])
-            #print(reduc_kpts)
-        
-        true_numkpt = max1*max2*max3
-        if num_reduc != true_numkpt:
-            print("ERROR: number of kpoints found from symmetry",num_reduc,' is not correct ',true_numkpt)
-            raise Exception('ERROR: number of kpoints found from symmetry',num_reduc,' is not correct ',true_numkpt)
+            print("num kpts reconstructed after time symmetry:", num_reduc)
+            # print(reduc_kpts[1])
+            # print(reduc_kpts)
 
-        #test kpoints being generated
-        #[n1,n2,n3] = [5,5,5]
-        #grid = np.mgrid[-0.5+1/n1/2:0.5-1/n1/2:n1*1j,-0.5+1/n2/2:0.5-1/n2/2:n2*1j,-0.5+1/n3/2:0.5-1/n3/2:n3*1j]
-        #test_red_kpts = np.array([grid[0].flatten(),grid[1].flatten(),grid[2].flatten()]).T
-        #print("should be kpoints:",test_red_kpts)
-        #num_uniq = len(np.unique(np.around(np.append(new_red_kpts,test_red_kpts,axis=0),decimals=4),axis=0))
-        #print("num unique with test kpts:",num_uniq)
-        
+        true_numkpt = max1 * max2 * max3
+        if num_reduc != true_numkpt:
+            print("ERROR: number of kpoints found from symmetry", num_reduc, ' is not correct ', true_numkpt)
+            raise Exception('ERROR: number of kpoints found from symmetry', num_reduc, ' is not correct ', true_numkpt)
+
+        # test kpoints being generated
+        # [n1,n2,n3] = [5,5,5]
+        # grid = np.mgrid[-0.5+1/n1/2:0.5-1/n1/2:n1*1j,-0.5+1/n2/2:0.5-1/n2/2:n2*1j,-0.5+1/n3/2:0.5-1/n3/2:n3*1j]
+        # test_red_kpts = np.array([grid[0].flatten(),grid[1].flatten(),grid[2].flatten()]).T
+        # print("should be kpoints:",test_red_kpts)
+        # num_uniq = len(np.unique(np.around(np.append(new_red_kpts,test_red_kpts,axis=0),decimals=4),axis=0))
+        # print("num unique with test kpts:",num_uniq)
+
         if self.verbose > 0:
             print(symopt_ind)
             print(reduc_toir)
             print(reduc_kpts)
-        
-        
+        return reduc_kpts, is_opposite, symopt_ind, reduc_toir, kpt_shifts, cart_operations, operations
+
+    def expand_irred_kgrid(self,save_only_inred=False):
+        """
+        This function does a couple things:
+        1. Finds the kpoints of the reducible grid and the coorespond symmetry operations to get them from the irreducible points.
+        2. Creates the eigenvalues, eigenvectors, and overlaps matrices for the new reducible kpoint grid.
+        """
+
+        ## -- 1 -- ##
+        reduc_kpts, is_opposite, symopt_ind, reduc_toir, kpt_shifts, cart_operations, operations = self.find_irred_to_red()
+        num_reduc = len(reduc_toir)
+
         ## -- 2 -- ##
+        # get irreducible kpts and their weights
+        irrec_kpts_count = self.kpt_weights
+        irrec_kpts = self.kpoints  # ,decimals=14)
+        # print(irrec_kpts)
+
         # get arrays for the p and d orbitals
         #print("orbtype!",self.exactorbtype)
         # get unique orbital types
@@ -5835,6 +5985,7 @@ class COGITO(object):
             sort_gpnts[sym_gpnts[:,2]<0] = sort_gpnts[sym_gpnts[:,2]<0] + np.array([[0,0,max_vals[2]*2 + 1]])
             
             ind = np.lexsort((sort_gpnts[:,0],sort_gpnts[:,1],sort_gpnts[:,2])) # index which converts the symmetrized gpnts to the normal gpnt ordering
+
             #ind = np.lexsort((sym_gpnts[:,0],sym_gpnts[:,1],sym_gpnts[:,2])) # index which converts the symmetrized gpnts to the normal gpnt ordering
             #print(ind.shape)
             sorted_symg = sym_gpnts[ind]
@@ -5847,7 +5998,6 @@ class COGITO(object):
                 print(og_gpnts)
                 print(sorted_symg)
                 print(is_opposite[kpt])
-            
             #old_Cnkg = np.array(old_recip_WFs[reduc_toir[kpt]])  # [band,gpoint]
             #new_Cnkg = old_Cnkg[:,ind] * np.exp(-2j*np.pi* np.dot(gpnts, shift))
             new_Cnkg = Gcoeff1[:,ind]
@@ -5951,36 +6101,53 @@ class COGITO(object):
         self.irred_kpt_weights = self.kpt_weights
         self.irred_Sij = self.Sij
         self.irred_Aij = self.Aij
+
+        if save_only_inred:
+            # save all the values
+            self.red_num_kpts = num_reduc
+            self.red_kpoints = reduc_kpts
+            self.red_mnkcoefficients = all_reduc_eigvec
+            self.red_eigval = all_reduc_eigval
+            # self.mixed_eigval = all_reduc_newval
+            self.red_gpoints = all_gpoints
+            # self.total_nrms = new_nrms
+            self.red_all_band_spillage = new_spill
+            self.red_max_orb_mixing = new_mixing
+            self.red_max_band_spilling = new_max_spill
+            self.red_recip_WFcoeffs = all_recip_wfs
+            self.red_kpt_weights = np.ones(self.num_kpts) / self.num_kpts
+            self.red_Sij = all_Sij
+            self.red_Aij = all_Aij
+        else:
+            # save all the values
+            self.num_kpts = num_reduc
+            self.kpoints = reduc_kpts
+            self.mnkcoefficients = all_reduc_eigvec
+            self.eigval = all_reduc_eigval
+            #self.mixed_eigval = all_reduc_newval
+            self.gpoints = all_gpoints
+            #self.total_nrms = new_nrms
+            self.all_band_spillage = new_spill
+            self.max_orb_mixing = new_mixing
+            self.max_band_spilling = new_max_spill
+            self.recip_WFcoeffs = all_recip_wfs
+            self.kpt_weights = np.ones(self.num_kpts)/self.num_kpts
         
-        # save all the values
-        self.num_kpts = num_reduc
-        self.kpoints = reduc_kpts
-        self.mnkcoefficients = all_reduc_eigvec
-        self.eigval = all_reduc_eigval
-        #self.mixed_eigval = all_reduc_newval
-        self.gpoints = all_gpoints
-        #self.total_nrms = new_nrms
-        self.all_band_spillage = new_spill
-        self.max_orb_mixing = new_mixing
-        self.max_band_spilling = new_max_spill
-        self.recip_WFcoeffs = all_recip_wfs
-        self.kpt_weights = np.ones(self.num_kpts)/self.num_kpts
-        
-        # reget all the overlap info
-        #print(self.num_kpts)
-        #print(self.kpoints)
-        #print(len(self.mnkcoefficients))
-        #self.get_ae_overlap_info()
-        
-        #self.optimize_band_set()
-        self.Sij = all_Sij
-        self.Aij = all_Aij
-        #print("check overlaps:")
-        #print(self.Sij[0],all_Sij[0])
-        #print(self.Sij[10],all_Sij[10])
-        #print(self.Sij[-1],all_Sij[-1])
-        
-        #np.set_printoptions(suppress=True,precision=8)
+            # re-get all the overlap info
+            #print(self.num_kpts)
+            #print(self.kpoints)
+            #print(len(self.mnkcoefficients))
+            #self.get_ae_overlap_info()
+
+            #self.optimize_band_set()
+            self.Sij = all_Sij
+            self.Aij = all_Aij
+            #print("check overlaps:")
+            #print(self.Sij[0],all_Sij[0])
+            #print(self.Sij[10],all_Sij[10])
+            #print(self.Sij[-1],all_Sij[-1])
+
+            #np.set_printoptions(suppress=True,precision=8)
         
     def symmetrize_orbs(self,recip_orbs):
         """
@@ -6291,7 +6458,7 @@ class COGITO(object):
             else:
                 return_value = True
                 recip_orbs = orbs #better be passing rreciprocal space orbitals!
-        except:
+        except: # just fails if any orbs argument is passed
             return_value = True
             recip_orbs = orbs
         
@@ -6514,7 +6681,7 @@ class COGITO(object):
             num_kpt = 1
             coeff = [coeff]
 
-        new_coeff = np.zeros(coeff.shape, dtype=np.complex128)
+        new_coeff = np.empty(coeff.shape, dtype=np.complex128)
         #finally normalize/orthogonalize the coefficient!
         for kpt in range(num_kpt):
             kdep_Aij = self.Aij[kpt]
@@ -6533,8 +6700,8 @@ class COGITO(object):
             kpoints = range(self.num_kpts)
         #self.get_WFdata_fromPOT() #get data to run convert_psuedo_toae
 
-        self.Sij_coeffs = np.zeros((self.num_kpts, self.num_orbs, self.num_orbs), dtype=np.complex128)
-        self.hamilton = np.zeros((self.num_orbs, self.num_orbs, len(kpoints)), dtype=np.complex128)
+        self.Sij_coeffs = np.empty((self.num_kpts, self.num_orbs, self.num_orbs), dtype=np.complex128)
+        self.hamilton = np.empty((self.num_orbs, self.num_orbs, len(kpoints)), dtype=np.complex128)
 
 
         wan_orbs = {}
@@ -6698,7 +6865,1455 @@ class COGITO(object):
             print("hamiltonian!:", self.hamilton[:,:,0],self.hamilton[:,:,4])
 
         return self.hamilton
-    
+
+    def make_irred_wannier(self):
+        """
+        This function is being made because there is no way to gaurentee that the Hirshfeld-like fitting of the Bloch orbital is invariant with primitive cell size.
+        After much trying on the Bloch fitting, I am giving up and trying a direct Wannier fit. However, I would like it to be as fast as possible.
+        As such, I will construct only local (<~3Ang) parts of the whole Wannier function to dramatically save time.
+        I will also construct this local wannier part per irred k-point by summing over bands, than get the full summed Wannier, which requires the red grid by transforming the irred Wannier bits.
+        Wish me luck.
+        Returns:
+
+        """
+
+        orb_radmax = self.cutoff_rad[self.orbatomnum] * 0.8 + np.tanh((np.array(self.init_orb_energy) + 8) / 5) * 0.2
+        print(orb_radmax)
+        rad_max = np.amax(orb_radmax)+2.
+        min_spac = min(np.amin(orb_radmax)*0.3,0.35)
+        print(rad_max)
+        print("spacing:",min_spac)
+        prim_wangrid, prim_spac, grid_res = self.get_wannier_grid(spacing=min_spac,rad_max=rad_max) # rad_max is adjusted later per orbital
+        cart_wangrid =  _red_to_cart((self._a[0], self._a[1], self._a[2]), prim_wangrid.transpose()).transpose()
+        # define the maximum radius for each orbital seperately
+        # nvm, this requires calculating gpnt*rgrid for each orbital which is way to expensive
+        #orb_radmax = self.cutoff_rad[self.orbatomnum] * 0.8 + np.tanh((self.init_orb_energy + 8) / 5) * 0.4
+
+        wan_kpt_orbs = np.empty((self.num_kpts,self.num_orbs,len(prim_wangrid[0])),dtype=np.complex128)
+        print(self.num_kpts)
+        for kpt in range(self.num_kpts):
+            bands_spill = self.all_band_spillage[kpt]
+            include_lowband = (((1 - bands_spill) > self.low_min_proj) | (self.eigval[kpt][:, 0] >= (
+                        self.efermi + self.energy_shift - 5)))  # only False for bad low energy bands
+            include_bands = (include_lowband) & (bands_spill < (1.0 - self.min_proj))
+            nonorth_coeff = self.mnkcoefficients[kpt][include_bands]
+            band_coeff = np.matmul(np.conj(nonorth_coeff), self.Sij[kpt])
+            # get the Cogitwo basis
+            DFT_wavefunc = self.recip_WFcoeffs[kpt][include_bands]
+            gvecs = np.array(self.gpoints[kpt])
+            gplusk_coords = (gvecs.transpose() + np.array([self.kpoints[kpt]]).transpose()).T
+
+            #for orb in range(self.num_orbs):
+            all_centers = self.primAtoms[self.orbatomnum].T
+            exp_term = np.exp(2j * np.pi * np.dot(gvecs, all_centers)) # [gpt, orb]
+
+            # cur_sum = DFT_wavefunc[0] * 0
+            cur_sum = np.matmul(band_coeff.T, DFT_wavefunc) # [orb, gpnt]
+            pln_wv = np.exp(2j * np.pi * np.dot(gplusk_coords, prim_wangrid)) # [num gpoints, num wan real points]
+            #print(pln_wv.shape)
+
+            wan_kpt_orbs[kpt] = np.matmul(cur_sum * exp_term.T, pln_wv)
+            if self.verbose > 0:
+                print("done with",kpt)
+
+        fast_sym = True
+        if fast_sym:
+            wan_orbs = self.expand_wannier(wan_kpt_orbs,prim_wangrid, prim_spac, grid_res)
+        else:
+            wan_orbs = np.average(wan_kpt_orbs, axis=0)
+
+        # now sum over k-point
+        const = self.gridxyz[0] * self.gridxyz[1] * self.gridxyz[2] #/ self.vol ** (1 / 2)
+        wan_orbs = wan_orbs/const
+
+        plot_grid = False
+        if plot_grid == True:
+            for orb in [0,1,4,5]:# range(self.num_orbs):
+                at_z0 = (cart_wangrid[2]-0) < 0.00001
+                fig = go.Figure(go.Scatter3d(x=cart_wangrid[0][at_z0], y=cart_wangrid[1][at_z0],z=wan_orbs[orb][at_z0].real, #intensity=wan_orbs[orb][at_z0].real,colorscale="RdBu",showscale=True,alphahull=0
+                                        ))
+
+                fig.update_layout(title='Wannier orbital', autosize=False,
+                                  width=500, height=500,
+                                  margin=dict(l=65, r=50, b=65, t=90))
+
+                fig.show()
+
+        return wan_orbs, prim_wangrid
+
+    def expand_wannier(self,wan_kpt_orbs,prim_wangrid, prim_spac, grid_res):
+        # expand wan_kpt_orbs to cover full red k-point grid
+        # (do later, for now expand grid before calling this function)
+        cart_wangrid =  _red_to_cart((self._a[0], self._a[1], self._a[2]), prim_wangrid.transpose()).transpose()
+
+        reduc_kpts, is_opposite, symopt_ind, reduc_toir, kpt_shifts, cart_operations, operations = self.find_irred_to_red()
+        num_reduc = len(reduc_toir)
+        test = False
+        if test:
+            # now make example from expanded redicible grid to compare
+            test_red_ind = 951
+            print("testing sym opt:", operations[symopt_ind[test_red_ind]])
+
+            testred_wan = np.empty((self.num_orbs, len(prim_wangrid[0])), dtype=np.complex128)
+            print(self.num_kpts)
+            for kpt in [test_red_ind]:
+                bands_spill = self.red_all_band_spillage[kpt]
+                include_lowband = (((1 - bands_spill) > self.low_min_proj) | (self.red_eigval[kpt][:, 0] >= (
+                        self.efermi + self.energy_shift - 5)))  # only False for bad low energy bands
+                include_bands = (include_lowband) & (bands_spill < (1.0 - self.min_proj))
+                nonorth_coeff = copy.deepcopy(self.red_mnkcoefficients[kpt][include_bands])
+                band_coeff = np.matmul(np.conj(nonorth_coeff), self.red_Sij[kpt])
+                # get the Cogitwo basis
+                DFT_wavefunc = self.red_recip_WFcoeffs[kpt][include_bands]
+                gvecs = np.array(self.red_gpoints[kpt])
+                gplusk_coords = (gvecs.transpose() + np.array([self.red_kpoints[kpt]]).transpose()).T
+
+                # for orb in range(self.num_orbs):
+                all_centers = self.primAtoms[self.orbatomnum].T
+                exp_term = np.exp(2j * np.pi * np.dot(gvecs, all_centers))  # [gpt, orb]
+
+                # cur_sum = DFT_wavefunc[0] * 0
+                cur_sum = np.sum(band_coeff[:, None, :] * DFT_wavefunc[:, :, None], axis=0)  # [gpt, orb]
+                pln_wv = np.exp(2j * np.pi * np.dot(gplusk_coords, prim_wangrid))  # [num gpoints, num wan real points]
+                print(pln_wv.shape)
+
+                testred_wan = np.sum(cur_sum[:, :, None] * exp_term[:, :, None] * pln_wv[:, None, :], axis=0)
+
+        ## -- 2 -- ##
+        # get irreducible kpts and their weights
+        irrec_kpts_count = self.kpt_weights
+        irrec_kpts = self.kpoints  # ,decimals=14)
+        # print(irrec_kpts)
+
+        # get arrays for the p and d orbitals
+        # print("orbtype!",self.exactorbtype)
+        # get unique orbital types
+        uniq_orbs, inverse = np.unique(self.orbtype, return_inverse=True)
+        # print("unique orbs:",uniq_orbs,inverse)
+        orb_index = {}
+        atm_has_orb = {}
+        orbatomnum = np.array(self.orbatomnum)
+        for ind, orb in enumerate(uniq_orbs):
+            orb_index[orb] = np.sort(np.arange(self.num_orbs)[inverse == ind])
+            # print(ind,orb,orb_index[orb])
+            atm_has_orb[orb] = np.unique(orbatomnum[orb_index[orb]])
+        num_irkpt = len(irrec_kpts)
+
+        wan_irkpt_orbs = wan_kpt_orbs  # [kpt,orb,real_grid]
+        shape = wan_irkpt_orbs.shape
+
+        #allwan_redkpt_orbs = np.empty((num_reduc, shape[1], shape[2]), dtype=np.complex128)
+        totwan_redkpt_orbs = np.zeros((shape[1], shape[2]), dtype=np.complex128)
+
+        # transform to the reducible kpts
+        for kpt in range(num_reduc):
+            # get the eigenvecs the normal way
+            cart_opt = cart_operations[symopt_ind[kpt]]
+            full_opt = cart_opt[:3, :3]  # np.linalg.inv()
+            prim_opt = operations[symopt_ind[kpt]][:3, :3]  # .T
+            # print(prim_opt)
+            prim_shift = operations[symopt_ind[kpt]][:3, 3]
+            sym_opt = full_opt
+            # print(prim_opt)
+            # print("sym opt:",sym_opt)
+            shift = cart_opt[:3, 3]
+
+            ir_coeffs = wan_irkpt_orbs[reduc_toir[kpt]]  # [orb,real_grid]
+            red_coeff = np.empty(ir_coeffs.shape,dtype=np.complex128)
+
+            old_atms = []
+            all_translates = []
+            # loop over atoms with p orbitals
+            redo_from_wfcoeff = False  # this is only necessary is orbital symmetry transformations aren't working (currently not for f orbitals)
+            for atm in range(self.numAtoms):
+                # print(atm)
+                center = self.primAtoms[atm] - prim_shift
+                new_center = np.matmul(prim_opt, center)  # - prim_shift
+                og_center = np.around(new_center,
+                                      decimals=10)  # _cart_to_red((self._a[0], self._a[1], self._a[2]), [new_center])[0],decimals=8)
+                # print("first:",prim_center)
+                prim_center = copy.deepcopy(og_center)
+                while (prim_center >= 1).any() or (prim_center < 0).any():
+                    translate = np.zeros(3)
+                    translate[prim_center >= 1] = -1
+                    translate[prim_center < 0] = 1
+                    prim_center = prim_center + translate
+                translate = prim_center - og_center
+                final_center = prim_center
+                # print(prim_opt,og_center,prim_center)
+                diff_atoms = self.primAtoms - final_center
+                # dist_atoms = np.linalg.norm(diff_atoms,axis=1)
+                dist_atoms = np.amin(
+                    [np.linalg.norm(diff_atoms, axis=1), np.abs(np.linalg.norm(diff_atoms, axis=1) - 1),
+                     np.abs(np.linalg.norm(diff_atoms, axis=1) - 2 ** (1 / 2)),
+                     np.abs(np.linalg.norm(diff_atoms, axis=1) - 3 ** (1 / 2))], axis=0)
+                old_atom = np.argmin(np.abs(dist_atoms))
+                # print(og_center,prim_center,translate)
+                if np.sum(np.abs(dist_atoms)[old_atom]) > self.sym_prec:
+                    print("WARNING: did not find an actual atom!!!", dist_atoms, old_atom)
+                # print(dist_atoms,old_atom)
+
+                if self.verbose > 1:
+                    if atm != old_atom:
+                        print(self.primAtoms[atm], final_center)
+                        print("new and old atm indices:", atm, old_atom)
+                for o in range(len(orbatomnum[orbatomnum == atm])):
+                    old_atms.append(old_atom)
+                    all_translates.append(translate)
+
+                for orb_type in uniq_orbs:
+                    has_orb = atm_has_orb[orb_type]
+                    orbind = orb_index[orb_type]
+                    if (has_orb == atm).any():
+                        if "s" in orb_type:
+                            # set s orbitals
+                            relative_atm = np.arange(len(has_orb))[has_orb == atm][0]
+                            relative_oldatm = np.arange(len(has_orb))[has_orb == old_atom][0]
+                            old_s = orbind[relative_oldatm]
+                            new_s = orbind[relative_atm]
+                            red_coeff[new_s] = ir_coeffs[old_s]
+
+                            # print("Is same atom?", atm, old_atom)
+                            # print("Is coefficient the same?", ir_coeffs[old_s],ir_coeffs[new_s])
+
+                        elif "p" in orb_type:
+                            old_patm = np.arange(len(has_orb))[has_orb == old_atom][0]
+                            new_patm = np.arange(len(has_orb))[has_orb == atm][0]
+
+                            old_pxpypz = orbind[old_patm * 3:(old_patm + 1) * 3]
+                            new_pxpypz = orbind[new_patm * 3:(new_patm + 1) * 3]
+                            # y z x
+                            oldatm_matrix = np.array(
+                                [self.orb_vec[old_pxpypz[0]], self.orb_vec[old_pxpypz[1]], self.orb_vec[old_pxpypz[2]]])
+                            newatm_matrix = np.array(
+                                [self.orb_vec[new_pxpypz[0]], self.orb_vec[new_pxpypz[1]], self.orb_vec[new_pxpypz[2]]])
+
+                            vasp_map = np.array([1, 2, 0])
+                            full_mtrx = np.matmul(newatm_matrix,
+                                                  np.matmul(sym_opt[vasp_map][:, vasp_map], oldatm_matrix.T))
+
+                            old_pcoeff = ir_coeffs[old_pxpypz]
+                            new_pcoeff = np.matmul(full_mtrx, old_pcoeff)
+
+                            # print("check sym:", sym_opt)
+                            # print(old_pcoeff[:,0],new_pcoeff[:,0])
+                            red_coeff[new_pxpypz] = new_pcoeff
+
+                        elif "d" in orb_type:
+
+                            old_datm = np.arange(len(has_orb))[has_orb == old_atom][0]
+                            new_datm = np.arange(len(has_orb))[has_orb == atm][0]
+                            old_z2_xz_yz_x2y2_xy = orbind[old_datm * 5:(old_datm + 1) * 5]
+                            new_z2_xz_yz_x2y2_xy = orbind[new_datm * 5:(new_datm + 1) * 5]
+
+                            sym = sym_opt.T  # just need transpose cause I wrote all the [i,j] as [j,i] and don't feel like rewriting it
+
+                            # for x^2 - y^2
+                            # x2y2_xi2 = sym[0,0]*sym[0,0]
+                            # print(sym[0,0]*sym[0,0],sym[1,0]*sym[1,0],sym[0,1]*sym[0,1],sym[1,1]*sym[1,1])
+                            # weirdval = ((sym[0,0]*sym[0,0] - sym[1,0]*sym[1,0]) - (sym[0,1]*sym[0,1]-sym[1,1]*sym[1,1]))/2
+                            x2y2_xi2yi2 = ((sym[0, 0] * sym[0, 0] - sym[1, 0] * sym[1, 0]) - (
+                                    sym[0, 1] * sym[0, 1] - sym[1, 1] * sym[1, 1])) / 2
+                            x2y2_zi2 = ((2 * sym[2, 0] * sym[2, 0] - sym[1, 0] * sym[1, 0] - sym[0, 0] * sym[0, 0]) - (
+                                    2 * sym[2, 1] * sym[2, 1] - sym[1, 1] * sym[1, 1] - sym[0, 1] * sym[
+                                0, 1])) / 2 / 3 ** (1 / 2)  # **(1/2)
+                            x2y2_xiyi = (2 * sym[0, 0] * sym[1, 0] - 2 * sym[0, 1] * sym[1, 1]) / 2  # **(1/2)
+                            x2y2_yizi = (2 * sym[1, 0] * sym[2, 0] - 2 * sym[1, 1] * sym[2, 1]) / 2  # **(1/2)
+                            x2y2_zixi = (2 * sym[2, 0] * sym[0, 0] - 2 * sym[2, 1] * sym[0, 1]) / 2  # **(1/2)
+
+                            # for z^2
+                            z2_xi2yi2 = (2 * (sym[0, 2] * sym[0, 2] - sym[1, 2] * sym[1, 2]) - (
+                                    sym[0, 1] * sym[0, 1] - sym[1, 1] * sym[1, 1]) - (
+                                                 sym[0, 0] * sym[0, 0] - sym[1, 0] * sym[1, 0])) / 2 / 3 ** (
+                                                1 / 2)  # 2/2**(1/2)
+                            # z2_yi2 = sym[1,2]*sym[1,2]
+                            z2_zi2 = (2 * (sym[2, 2] * sym[2, 2] - sym[0, 2] * sym[0, 2] - sym[1, 2] * sym[1, 2]) - (
+                                    sym[2, 0] * sym[2, 0] - sym[0, 0] * sym[0, 0] - sym[1, 0] * sym[1, 0]) - (
+                                              sym[2, 1] * sym[2, 1] - sym[0, 1] * sym[0, 1] - sym[1, 1] * sym[
+                                          1, 1])) / 4
+                            z2_xiyi = (2 * (2 * sym[0, 2] * sym[1, 2]) - (2 * sym[0, 0] * sym[1, 0]) - (
+                                    2 * sym[0, 1] * sym[1, 1])) / 2 / (3) ** (1 / 2)
+                            z2_yizi = (2 * (2 * sym[1, 2] * sym[2, 2]) - (2 * sym[1, 0] * sym[2, 0]) - (
+                                    2 * sym[1, 1] * sym[2, 1])) / 2 / (3) ** (1 / 2)
+                            z2_zixi = (2 * (2 * sym[2, 2] * sym[0, 2]) - (2 * sym[2, 0] * sym[0, 0]) - (
+                                    2 * sym[2, 1] * sym[0, 1])) / 2 / (3) ** (1 / 2)
+
+                            # for xy
+                            xy_xi2yi2 = (sym[0, 0] * sym[0, 1] - sym[1, 0] * sym[1, 1])  # /2**(1/2)
+                            # xy_yi2 = sym[1,0]*sym[1,1]
+                            xy_zi2 = (2 * sym[2, 0] * sym[2, 1] - sym[1, 0] * sym[1, 1] - sym[0, 0] * sym[0, 1]) / (
+                                3) ** (1 / 2)
+                            xy_xiyi = sym[0, 0] * sym[1, 1] + sym[1, 0] * sym[0, 1]
+                            xy_yizi = sym[1, 0] * sym[2, 1] + sym[2, 0] * sym[1, 1]
+                            xy_zixi = sym[2, 0] * sym[0, 1] + sym[0, 0] * sym[2, 1]
+                            # for yz
+                            yz_xi2yi2 = (sym[0, 1] * sym[0, 2] - sym[1, 1] * sym[1, 2])  # /2**(1/2)
+                            # yz_yi2 = sym[1,1]*sym[1,2]
+                            yz_zi2 = (2 * sym[2, 1] * sym[2, 2] - sym[1, 1] * sym[1, 2] - sym[0, 1] * sym[0, 2]) / (
+                                3) ** (1 / 2)
+                            yz_xiyi = sym[0, 1] * sym[1, 2] + sym[1, 1] * sym[0, 2]
+                            yz_yizi = sym[1, 1] * sym[2, 2] + sym[2, 1] * sym[1, 2]
+                            yz_zixi = sym[2, 1] * sym[0, 2] + sym[0, 1] * sym[2, 2]
+                            # for zx
+                            zx_xi2yi2 = (sym[0, 2] * sym[0, 0] - sym[1, 2] * sym[1, 0])  # /2**(1/2)
+                            # xz_yi2 = sym[1,0]*sym[1,2]
+                            zx_zi2 = (2 * sym[2, 2] * sym[2, 0] - sym[1, 2] * sym[1, 0] - sym[0, 2] * sym[0, 0]) / (
+                                3) ** (1 / 2)
+                            zx_xiyi = sym[0, 2] * sym[1, 0] + sym[1, 2] * sym[0, 0]
+                            zx_yizi = sym[1, 2] * sym[2, 0] + sym[2, 2] * sym[1, 0]
+                            zx_zixi = sym[2, 2] * sym[0, 0] + sym[0, 2] * sym[2, 0]
+                            # order is z2, zx, yz, x2-y2, xy
+                            d_switching = np.array([[z2_zi2, z2_zixi, z2_yizi, z2_xi2yi2, z2_xiyi],
+                                                    [zx_zi2, zx_zixi, zx_yizi, zx_xi2yi2, zx_xiyi],
+                                                    [yz_zi2, yz_zixi, yz_yizi, yz_xi2yi2, yz_xiyi],
+                                                    [x2y2_zi2, x2y2_zixi, x2y2_yizi, x2y2_xi2yi2, x2y2_xiyi],
+                                                    [xy_zi2, xy_zixi, xy_yizi, xy_xi2yi2,
+                                                     xy_xiyi]])  # np.around(,decimals=15)
+                            # print("d_switching:",d_switching)
+                            # print(sym)
+                            # new order is dxy dyz dz2 dxz dx2y2
+                            vasp_map = np.array([4, 2, 0, 1, 3])
+                            oldatm_matrix = np.array(
+                                [self.orb_vec[old_z2_xz_yz_x2y2_xy[0]], self.orb_vec[old_z2_xz_yz_x2y2_xy[1]],
+                                 self.orb_vec[old_z2_xz_yz_x2y2_xy[2]], self.orb_vec[old_z2_xz_yz_x2y2_xy[3]],
+                                 self.orb_vec[old_z2_xz_yz_x2y2_xy[4]]])
+                            newatm_matrix = np.array(
+                                [self.orb_vec[new_z2_xz_yz_x2y2_xy[0]], self.orb_vec[new_z2_xz_yz_x2y2_xy[1]],
+                                 self.orb_vec[new_z2_xz_yz_x2y2_xy[2]], self.orb_vec[new_z2_xz_yz_x2y2_xy[3]],
+                                 self.orb_vec[new_z2_xz_yz_x2y2_xy[4]]])
+
+                            full_mtrx = np.matmul(newatm_matrix,
+                                                  np.matmul(d_switching[vasp_map][:, vasp_map], oldatm_matrix.T))
+
+                            old_dcoeff = ir_coeffs[old_z2_xz_yz_x2y2_xy]
+                            new_dcoeff = np.matmul(full_mtrx, old_dcoeff)
+                            red_coeff[new_z2_xz_yz_x2y2_xy] = new_dcoeff
+                            # if (old_z2_xz_yz_x2y2_xy != new_z2_xz_yz_x2y2_xy).any():
+                            #    print("d coeff:",old_dcoeff[:,0],new_dcoeff[:,0])
+
+                        elif 'f' in orb_type:
+                            # redo_from_wfcoeff = True
+                            old_datm = np.arange(len(has_orb))[has_orb == old_atom][0]
+                            new_datm = np.arange(len(has_orb))[has_orb == atm][0]
+                            old_forbs = orbind[old_datm * 7:(old_datm + 1) * 7]
+                            new_forbs = orbind[new_datm * 7:(new_datm + 1) * 7]
+
+                            oldatm_matrix = np.array(
+                                [self.orb_vec[old_forbs[0]], self.orb_vec[old_forbs[1]], self.orb_vec[old_forbs[2]],
+                                 self.orb_vec[old_forbs[3]],
+                                 self.orb_vec[old_forbs[4]], self.orb_vec[old_forbs[5]], self.orb_vec[old_forbs[6]]])
+                            newatm_matrix = np.array(
+                                [self.orb_vec[new_forbs[0]], self.orb_vec[new_forbs[1]], self.orb_vec[new_forbs[2]],
+                                 self.orb_vec[new_forbs[3]],
+                                 self.orb_vec[new_forbs[4]], self.orb_vec[new_forbs[5]], self.orb_vec[new_forbs[6]]])
+
+                            f_switching = D_real_l3_from_R(sym_opt)
+
+                            full_mtrx = np.matmul(newatm_matrix, np.matmul(f_switching, oldatm_matrix.T))
+
+                            old_fcoeff = ir_coeffs[old_forbs]
+                            new_fcoeff = np.matmul(full_mtrx, old_fcoeff)
+                            red_coeff[new_forbs] = new_fcoeff
+
+            # also include the kpt shift
+            ## no need for this because the orbital is already centered at 0
+            # phase_shift = np.exp(-2j * np.pi * np.dot(kpt_shifts[kpt], (self.orbpos).T))
+            # red_coeff = (red_coeff.T * phase_shift).T
+
+            # also include time symmetry
+            if is_opposite[kpt]:
+                if self.verbose > 2:
+                    print("at time sym point!", kpt)
+                red_coeff = np.conj(red_coeff)
+
+            # now have to shift the primitive cell grid of the wannier functions
+            # generate from irred gpnts
+            shift_gpnts = prim_wangrid
+            sym_gpnts = np.matmul(prim_opt, shift_gpnts).T
+
+            # Convert rotated coordinates to signed integer grid coordinates.
+            grid_ind = np.rint(sym_gpnts.T / prim_spac[:, None]).astype(int)
+
+            # Convert negative indices to FFT-style positions:
+            #  0, 1, ..., 5, -4, ..., -1  ->  0, 1, ..., 5, 6, ..., 9
+            sort_ind = grid_ind % (grid_res[:, None] + 1)
+
+            ind = np.lexsort((sort_ind[0], sort_ind[1], sort_ind[2]))
+            inverse_ind = np.argsort(ind)
+
+            # print(ind.shape)
+            sorted_symg = sym_gpnts[ind]
+            # verify that the new grid is the same as the original
+            diff_grid = np.linalg.norm(sorted_symg - prim_wangrid.T, axis=1)
+            if (diff_grid > 0.0000001).any():
+                print("Grid errors!", np.arange(len(ind))[
+                    diff_grid > 0.00000001])  # ,sorted_symg[diff_grid > 0.00000001],prim_wangrid.T[diff_grid > 0.00000001])
+
+            red_coeff = red_coeff[:, ind]
+
+            #allwan_redkpt_orbs[kpt] = red_coeff  # [:,ind] #/ old_phase[:,ind] * new_phase # [kpt,orb,real_grid]
+            totwan_redkpt_orbs +=  red_coeff
+
+            if test:
+                sym_wan = red_coeff # allwan_redkpt_orbs[kpt]
+                if kpt == 0:
+                    true_wan = wan_kpt_orbs[0]
+                else:
+                    true_wan = testred_wan
+                # print(sym_wan)
+                # print(true_wan)
+                for orb in [5, 6, 9]:  # range(self.num_orbs):
+                    print(orb)
+                    print(sym_wan[orb])
+                    # print(true_wan[orb])
+                    phase_diff = true_wan[orb] / sym_wan[orb]
+                    wan_diff = true_wan[orb] - sym_wan[orb]
+                    if (np.abs(wan_diff) > 0.0000001).any():
+                        print("still not correct!", len(np.arange(len(wan_diff))[np.abs(wan_diff) > 0.0000001]),
+                              np.arange(len(wan_diff))[np.abs(wan_diff) > 0.0000001],
+                              wan_diff[np.abs(wan_diff) > 0.0000001])
+                        # print(sorted_symg[inverse_ind][np.abs(wan_diff)>0.00001])
+                        print(sorted_symg[np.abs(wan_diff) > 0.0000001])
+                        print(prim_wangrid.T[np.abs(wan_diff) > 0.0000001])
+                        print("correct points:", prim_wangrid.T[np.abs(wan_diff) < 0.0000001])
+                    dot_prod = np.log(phase_diff) / 2j / np.pi
+                    print(phase_diff)
+                    # print(dot_prod)
+                    print(reduc_kpts[kpt])
+                    print(kpt_shifts[kpt])
+                    # print(sorted_symg)
+                    # print(sym_gpnts)
+                    plot_grid = False
+                    if plot_grid == True:
+                        at_z0 = (cart_wangrid[2] - 0) < 0.00001
+                        fig = go.Figure(go.Scatter3d(x=cart_wangrid[0][at_z0], y=cart_wangrid[1][at_z0],
+                                                     z=true_wan[orb][at_z0].real,
+                                                     # intensity=wan_orbs[orb][at_z0].real,colorscale="RdBu",showscale=True,alphahull=0
+                                                     ))
+
+                        fig.update_layout(title='Wannier orbital', autosize=False,
+                                          width=500, height=500,
+                                          margin=dict(l=65, r=50, b=65, t=90))
+
+                        fig.show()
+
+                        fig = go.Figure(
+                            go.Scatter3d(x=cart_wangrid[0][at_z0], y=cart_wangrid[1][at_z0], z=sym_wan[orb][at_z0].real,
+                                         # intensity=wan_orbs[orb][at_z0].real,colorscale="RdBu",showscale=True,alphahull=0
+                                         ))
+
+                        fig.update_layout(title='Wannier orbital', autosize=False,
+                                          width=500, height=500,
+                                          margin=dict(l=65, r=50, b=65, t=90))
+
+                        fig.show()
+
+        #wan_kpt_orbs = allwan_redkpt_orbs
+        #return wan_kpt_orbs
+        return totwan_redkpt_orbs/num_reduc
+
+    def get_wannier_grid(self,res:int=31,rad_max:float=4.0,spacing:float=0.2):
+
+        # make an evenly spaced grid all within a sphere. Then later weight the coordinates by whatever you want the maximum
+        if spacing == None: # tried to do for diff max per orb but not ideal
+            rad_max = 1.0
+        # determine grid size such that can encompass a sphere of radius rad_max
+        a1, a2, a3 = self._a
+        # get the (normalized) line perpendicular to the plane defined by a2 and a3 and project a1 onto line.
+        perp_lines = np.array([
+                np.cross(a2, a3) / np.linalg.norm(np.cross(a2, a3)),
+                np.cross(a3, a1) / np.linalg.norm(np.cross(a3, a1)),
+                np.cross(a1, a2) / np.linalg.norm(np.cross(a1, a2))])
+        plane_dist = np.sum(self._a*perp_lines,axis=1)
+        #print(perp_lines,self._a)
+        grid_len = np.array([rad_max,rad_max,rad_max])/plane_dist
+        print(plane_dist,grid_len)
+        abc = np.linalg.norm(self._a,axis=1)
+        if spacing == None: # not ideal...
+            waste_ratio = abc/plane_dist
+            grid_res = np.array(np.rint([res * waste_ratio,res * waste_ratio,res * waste_ratio]),dtype=int)
+            print("abc:",abc)
+        else:
+            grid_res = np.array(np.around(grid_len*2*abc/spacing,decimals=0),dtype=int)
+        grid_res[grid_res%2==0] = grid_res[grid_res%2==0] + 1
+        print(grid_res)
+        #if res%2==0: # ensure that the number is odd so centers at zero
+        #    res = res+1
+        #grid_res = np.array([res, res, res], dtype=int)
+
+        prim_spac = grid_len * 2 / (grid_res - 1)
+        print(prim_spac,grid_len,grid_res)
+        x, y, z = np.mgrid[-grid_len[0]: grid_len[0]: grid_res[0] * 1j, -grid_len[1]: grid_len[1]: grid_res[1] * 1j,
+                  -grid_len[2]: grid_len[2]: grid_res[2] * 1j]
+        #print(x.flatten())
+        x = x.flatten()
+        y = y.flatten()
+        z = z.flatten()
+        cart_wangrid = _red_to_cart((self._a[0], self._a[1], self._a[2]),
+                                    np.array([x, y, z]).transpose()).transpose()  # [3,num points]
+        #print("cart_wangrid", cart_wangrid)
+        #print("cart_wangrid", cart_wangrid.shape)
+        mask = (cart_wangrid[0] ** 2 + cart_wangrid[1] ** 2 + cart_wangrid[2] ** 2 - rad_max**2) < 0.00000001
+        x = x[mask]
+        y = y[mask]
+        z = z[mask]
+        cart_wangrid = cart_wangrid[:, mask]
+        prim_wangrid = np.array([x, y, z])
+        # order differently
+        sym_gpnts = prim_wangrid.T
+
+        # Convert rotated coordinates to signed integer grid coordinates.
+        grid_ind = np.rint(sym_gpnts.T / prim_spac[:,None]).astype(int)
+
+        # Convert negative indices to FFT-style positions:
+        #  0, 1, ..., 5, -4, ..., -1  ->  0, 1, ..., 5, 6, ..., 9
+        sort_ind = grid_ind % (grid_res[:,None]+1)
+
+        ind = np.lexsort((sort_ind[0], sort_ind[1], sort_ind[2]))
+        #print(ind.shape)
+        prim_wangrid = sym_gpnts[ind].T
+        return prim_wangrid, prim_spac, grid_res
+
+    def fit_local_wannier(self,wannier_orbs, prim_wangrid, plot_orbs = False,orbfactor=1.0,outer=0):
+        """
+        This function is necessary when using reciprocal integrals
+        because they need an individual orbital rather than the unk = sum_R(y(r-R)).
+        The algorithm used here determines the percent of the center orbital
+        which is exact if the orbital has a precise exponential decay with radius. See COGITO paper for more details.
+        """
+        # unkorbs = self.one_orbitalWF
+        # og_orbs = self.one_orbitalWF
+        # keys = list(unkorbs.keys())
+        # print("spherical harmonics key:", self.sph_harm_key)
+        # fig1 = plt.figure()
+        # fig2 = plt.figure()
+        orb_to_l = [0, 1, 1, 1, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3]
+        orbital_coeffs = np.zeros((self.num_orbs, 9))
+        recip_orbcoeffs = np.zeros((self.num_orbs, 9))
+        avg_radius = np.zeros(self.num_orbs)
+        radial_nrmse = np.zeros(self.num_orbs)
+        radial_nme = np.zeros(self.num_orbs)
+        final_gaus_fiterrors = np.zeros((self.num_orbs, 4))
+        # shift all the orbitals so that it's atom is at [0,0,0] on the grid
+
+        centered_orbs = wannier_orbs # self.recip_to_real(centered_recip)  # self.center_real_orbs(unkorbs)
+
+        # get the grid for the orbitals,
+        cart_wangrid =  _red_to_cart((self._a[0], self._a[1], self._a[2]), prim_wangrid.transpose()).transpose()
+
+        rad = np.linalg.norm(cart_wangrid, axis=0)
+        rad[rad == 0] = 0.0000000001
+        theta = np.arccos(cart_wangrid[2] / rad)
+        theta[rad == 0.0000000001] = 0
+        phi = np.arctan2(cart_wangrid[1], cart_wangrid[0])
+
+        # try much simplier method of getting groups by checking eigenvalues
+        orb_groups = []
+        uniq_type = []
+        # print("environment tensor!",self.environ_tensors)
+
+        # also include atom magnetic moment in determining symemtrically equivalent orbitals
+        tot_magmoms = np.zeros(self.numAtoms)
+        if self.spin_polar:
+            if self.spin_polar:
+                from pymatgen.io.vasp.outputs import Outcar
+                outcar = Outcar(self.directory + "OUTCAR")
+                mag = outcar.magnetization
+                tot_magmoms = [m["tot"] for m in mag]
+
+        for orb in range(self.num_orbs):
+            sphkey = self.sph_harm_key[orb]
+            l = [0, 1, 1, 1, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3][sphkey]
+            atomnum = self.orbatomnum[orb]
+            if l == 0:
+                eigval = str(np.around(self.environ_tensors[atomnum][0], decimals=5))
+                uniq_type.append(eigval + self.orbtype[orb] + self.elements[atomnum] + str(
+                    np.around(tot_magmoms[atomnum], decimals=3)))  ## HERE
+            if l == 1:
+                eigval = max(np.abs(np.matmul(self.environ_tensors[atomnum][1], self.orb_vec[orb]))) / max(
+                    np.abs(self.orb_vec[orb]))
+                uniq_type.append(str(np.around(eigval, decimals=5)) + self.orbtype[orb] + self.elements[atomnum] + str(
+                    np.around(tot_magmoms[atomnum], decimals=3)))
+            if l == 2:
+                eigval = max(np.abs(np.matmul(self.environ_tensors[atomnum][2], self.orb_vec[orb]))) / max(
+                    np.abs(self.orb_vec[orb]))
+                uniq_type.append(str(np.around(eigval, decimals=5)) + self.orbtype[orb] + self.elements[atomnum] + str(
+                    np.around(tot_magmoms[atomnum], decimals=3)))
+            if l == 3:
+                eigval = max(np.abs(np.matmul(self.environ_tensors[atomnum][3], self.orb_vec[orb]))) / max(
+                    np.abs(self.orb_vec[orb]))
+                uniq_type.append(str(np.around(eigval, decimals=5)) + self.orbtype[orb] + self.elements[atomnum] + str(
+                    np.around(tot_magmoms[atomnum], decimals=3)))
+        uniq_type = np.array(uniq_type)
+        uniq_strs, uniq_ind = np.unique(uniq_type, return_index=True)
+        uniq_strs = uniq_type[np.sort(uniq_ind)]
+        for string in uniq_strs:
+            group = np.arange(self.num_orbs)[uniq_type == string]
+            orb_groups.append(group)
+
+        if self.verbose > 0:
+            print("found like orbital groups!", orb_groups)
+
+        # if len(included_orbs) != self.num_orbs:
+        #    print("error!!! not all orbitals are included in the fitting!")
+
+        # orb_groups = np.array([np.arange(self.num_orbs)],dtype=np.int_).T
+
+        # fit the orbitals to gaussian
+        # first find the radial part of each orbital (including the extra part to try and get the atomic rather than Bloch)
+        # than, for each orbital group, include all in all the orbitals and fit to function
+        # update prediction and repeat
+
+        all_radunk = {}
+        all_good_rad = {}
+        all_weights = {}
+        orbgroup_gausparams = np.zeros((len(orb_groups), 9))
+        orbgroup_finalgausparams = np.zeros((len(orb_groups), 9))
+        orbgroup_pseudoparams = np.zeros((len(orb_groups), 9))
+        orbgroup_expparams = np.zeros((len(orb_groups), 7))
+        orbgroup_fancyparams = np.zeros((len(orb_groups), 7))
+
+        import time
+
+        start_time = time.time()
+
+        end_time = time.time()
+
+        # Calculate elapsed time
+        elapsed_time = end_time - start_time
+        # Record start time
+        start_time = time.time()
+        # get the orbital radunk, good_rad, and weights
+
+        start_time = time.time()
+        for orb in range(self.num_orbs):  # orbind, enumerate(keys):
+            atom = self.orbatomnum[orb]
+            unk = centered_orbs[orb].real
+
+            # fit the exponential decay
+            orbperatom = self.sph_harm_key[orb]
+            angular_part = complex128funs(phi, theta, self.orb_vec[orb])
+            # change points very close to zero rad for p and d orbs
+            if orbperatom != 0:
+                angular_part[rad < 0.001] = 0.0001  # just for the limit so point is never included
+            largeenough = np.abs(angular_part) > 0.01
+            radunk = unk[largeenough] / angular_part[largeenough]
+            angular_part[angular_part == 0] = 0.001
+            good_rad = rad[largeenough]
+
+            # change p and d orbs for the center point is zero
+            if orbperatom != 0:
+                radunk[good_rad < 0.001] = 0.0  # just for the limit later
+
+            positive = (radunk != 0.0) & (good_rad != 0)
+            radunk = radunk[positive]
+            good_rad = good_rad[positive]
+
+            l = orb_to_l[orbperatom]
+            weights = (1 / (good_rad + 0.001) ** (1/2)) * np.abs(
+                angular_part[largeenough][positive]) ** (1 / 2)  # +radunk*5000
+            orbkey = self.orbtype[orb]
+            no_node = orbkey[0] == orbkey
+
+            # randomly select points to fit based on (1-(x/cutoff)^2) to speed up fit and have more even radial distribution of points
+            rand = np.random.rand(len(radunk))
+            func = 1 / good_rad ** (2)  # (1-(good_rad/(self.cutoff_rad[atom]*2))**(2))
+            keep_point = rand < func
+            radunk = radunk[keep_point]
+            good_rad = good_rad[keep_point]
+            weights = weights[keep_point]
+            # print("reduced points:",len(rand),len(radunk))
+
+            # add extra points to help with the fitting of orbitals with a node (usually second s orbital)
+            if not no_node and orbkey[0] == 's':  # only do for s orbitals
+                included_ratio = ratio[largeenough][positive][keep_point][inside_cut]
+                # good_ratio = (included_ratio > 0.6) & (included_ratio < 2)
+                # below_cut = good_rad[good_ratio] < cutoff*1.1
+                gd_rat_low = (included_ratio > 0.6) & (included_ratio < 2) & (good_rad < cutoff)  # *1.1)
+                max_unk = np.average(np.sort(radunk[gd_rat_low])[-15:])  # average max point
+                rad_at_max = np.average(
+                    good_rad[gd_rat_low][np.abs(radunk[gd_rat_low] - max_unk) < max_unk * 0.2])
+                final_max = np.average(
+                    np.sort(radunk[gd_rat_low][np.abs(good_rad[gd_rat_low] - rad_at_max) < 0.05])[-10:])
+                if self.verbose > 1:
+                    print("original max, rad, final max:", max_unk, rad_at_max, final_max)
+                # rad_at_max = np.average(good_rad[gd_rat_low][(radunk[gd_rat_low] < final_max*1.2) & (radunk[gd_rat_low] > final_max)])
+                # final_max = np.average(np.sort(radunk[gd_rat_low][np.abs(good_rad[gd_rat_low]-rad_at_max) < 0.05])[-5:])
+                # print("original max, rad, final max:",max_unk,rad_at_max,final_max)
+                if math.isnan(rad_at_max) or math.isnan(final_max):
+                    if self.verbose > 1:
+                        print("caught nan")
+                    radunk = np.append(radunk, [0, 0])
+                    good_rad = np.append(good_rad, [cutoff + 2, cutoff + 2])
+                    weights = np.append(weights, [0.01, 0.01])
+                else:
+                    radunk = np.append(radunk, [final_max, 0])
+                    good_rad = np.append(good_rad, [rad_at_max, cutoff + 2])
+                    weights = np.append(weights, [2, 0])
+
+            all_radunk[orb] = radunk
+            all_good_rad[orb] = good_rad
+            all_weights[orb] = weights
+
+        end_time = time.time()
+        make_rad = end_time - start_time
+
+        orb_nrms = np.zeros(self.num_orbs)
+        orb_nme = np.zeros(self.num_orbs)
+        prev_orb_nrms = np.zeros(self.num_orbs)
+        prev_orb_nme = np.zeros(self.num_orbs)
+        start_time = time.time()
+        for group_ind, orbgroup in enumerate(orb_groups):
+            first_time = time.time()
+            atom = self.orbatomnum[orbgroup[0]]
+            orbperatom = self.sph_harm_key[orbgroup[0]]
+            # append all values for each orb in orbgroup
+            good_rad = all_good_rad[orbgroup[0]]
+            radunk = all_radunk[orbgroup[0]]
+            weights = all_weights[orbgroup[0]]
+            for orbind, orb in enumerate(orbgroup[1:]):
+                radunk = np.append(radunk, all_radunk[orb])
+                good_rad = np.append(good_rad, all_good_rad[orb])
+                weights = np.append(weights, all_weights[orb])
+
+            # use the previously fitted gaus params to the pseudo orbital as initial condition
+            [pa, pb, pc, pd, pe, pf, l] = self.orig_gausparams[orbgroup[0]]
+            # [pg,ph] = [0,new_cutoff/4]
+            # rescale the magnitude of the converged orbital
+            simprad = np.linspace(0, 5, 100)
+            simporb = func_for_rad(simprad, pa, pb, pc, pd, pe, pf, 0, 1 / 2, l=l)
+            max_ind = np.argmax(np.abs(simporb))
+            max_rad = simprad[max_ind]
+            max_val = np.abs(simporb[max_ind])
+
+            l = orb_to_l[orbperatom]
+            max_pos_ind = np.argmax(simporb)
+            max_pos = np.amax(simporb)
+            test_cut_ind = np.argmin(np.abs(simporb[max_pos_ind:] - max_pos / 3))
+            test_cutoff = simprad[max_pos_ind:][test_cut_ind]
+            # control if it's too small from an s orbitals
+            if test_cutoff < 1.0:
+                test_cutoff = test_cutoff ** (1 / 8)
+            sixth_cutoff = simprad[max_pos_ind:][np.argmin(np.abs(simporb[max_pos_ind:] - max_pos / 1.5))]
+            if sixth_cutoff < 1.0:
+                sixth_cutoff = sixth_cutoff ** (1 / 4)
+            cutoff = self.cutoff_rad[atom] * 0.9 + np.tanh(
+                (self.init_orb_energy[orbgroup[0]] + 8) / 5) * 0.5  # self.cutoff_rad[atom]*0.8#**(1/2)#*1.4
+            # print("testing cutoffs:",test_cutoff,cutoff)
+            if test_cutoff > cutoff:
+                test_cutoff = test_cutoff * 0.25 + cutoff * 0.75
+            # cutoff = test_cutoff
+            expcutoff = cutoff ** (1 / 2)
+            new_cutoff = cutoff ** (1 / 2)
+            orbkey = self.orbtype[orbgroup[0]]
+            no_node = orbkey[0] == orbkey  # only is one character: 's', 'p', or 'd'
+            # if not no_node: # make cutoff a bit larger
+            #    cutoff = cutoff*1.1
+
+            fourth_time = time.time()
+            # go back to curve_fit
+            # e = 0
+            # f = expcutoff/2
+            [pg, ph] = [0, new_cutoff / 4]
+            g = 0
+            h = expcutoff / 2
+            min_cut = new_cutoff / 15  # expcutoff/8
+            if l == 2:
+                min_cut = expcutoff / 4
+            l = orb_to_l[orbperatom]
+            if no_node:
+                notbad_low = (radunk > 0) | (good_rad < test_cutoff / 2) | (
+                            good_rad > test_cutoff)  # remove points that are below zero close to the R=0 if no node
+            else:
+                notbad_low = np.ones(len(radunk), dtype=bool)
+            x = good_rad[notbad_low]  # [good_rad<=test_cutoff]
+            y = radunk[notbad_low]  # [good_rad<=test_cutoff]
+
+            truemaxval = np.abs(np.average(y[np.abs(x - max_rad) < 0.1]))  # ,weights = weights[good_rad<=cutoff][np.abs(x-max_rad) < 0.1/(l+1)]))
+            #print(truemaxval)
+            # filter any bad values
+            filtered_y = y[(y > 0) & (y < 2 * truemaxval)]
+            filtered_x = x[(y > 0) & (y < 2 * truemaxval)]
+            #print(np.abs(np.average(filtered_y)))
+            truemaxval = np.abs(np.average(filtered_y[np.abs(filtered_x - max_rad) < 0.1]))
+            other_maxval = np.abs(np.average(np.sort(y[x < max_rad + 0.5])[::-1][:50]))
+            if self.verbose > 0:
+                print("possible maxes", truemaxval, other_maxval, max_rad + 0.5)
+            if truemaxval < other_maxval / 4:
+                truemaxval = other_maxval
+                if truemaxval > 0.008:
+                    truemaxval = 0.008
+            if np.isnan(truemaxval):
+                truemaxval = max_val
+            #print("possible maxes", truemaxval, other_maxval)
+            # print("normalizing values:",max_rad,max_val,truemaxval)
+            # print("before norm:",[pa,pc,pe])
+            [pa, pc, pe] = np.array([pa, pc, pe]) / max_val * truemaxval
+
+            # try new intermediate fit that has less parameters but is still expressive to improve consistency
+            def fit_variable_func(x, a, b, c, d, e, f, l):
+                tan_fac = 1
+                if l == 0:
+                    tan_fac = 2
+                return x ** l * (a / b * np.exp(-(x / b) ** 2) + c / d * np.exp(-x ** e / d) * np.tanh(
+                    (x / f) ** tan_fac))  # *(1-np.tanh((x/f)**tan_fac))
+
+            new_fitting_func = partial(fit_variable_func, l=l)
+            test_sixth = self.cutoff_rad[atom] * 0.8 + np.tanh((self.init_orb_energy[orbgroup[0]] + 8) / 5) * 0.4
+            if sixth_cutoff < test_sixth:
+                sixth_cutoff = sixth_cutoff * 0.8 + test_sixth * 0.2
+            if sixth_cutoff > test_sixth:
+                #print("Changing sixth_cutoff:",sixth_cutoff, test_sixth)
+                sixth_cutoff = sixth_cutoff*0.5+test_sixth*0.5
+            zero_cutoff = sixth_cutoff * 0.9 + 1.2
+            print("test cutoff:", test_cutoff, zero_cutoff, test_sixth, sixth_cutoff)
+
+            # x = np.append(x, np.linspace(zero_cutoff+0,zero_cutoff+4,10)) #[zero_cutoff + 2.0, zero_cutoff + 2.5, zero_cutoff + 3.0, zero_cutoff + 3.5,zero_cutoff + 4.0])
+            # y = np.append(y, np.zeros(10))#[0, 0, 0, 0, 0])
+            # vary_wght = np.sum(weights[good_rad > zero_cutoff])/(outer+1) # use more for large systems with more points
+            init_weight = weights[notbad_low]**2  # np.append(weights[notbad_low],np.linspace(0,vary_wght,10)) #[vary_wght, vary_wght*4, vary_wght*8,vary_wght*12,vary_wght*16])
+            # normalize weights
+            init_weight = init_weight / np.sum(init_weight)*100
+            # remove any points which are either 20% of truemaxval higher than the pseudo orbital or 50% of the pseudo orb at each r higher.
+            pseudo_orb = func_for_rad(x, pa, pb, pc, pd, pe, pf, pg, ph, l=l)
+
+            # notbad_high = (y < pseudo_orb + truemaxval*0.15*(outer+1)**(1/4)) & (y < pseudo_orb*1.2*(outer+1)**(1/4)) & (y > pseudo_orb - truemaxval*0.25*(outer+1)**(1/4))
+            # y = y[notbad_high]
+            # init_weight = init_weight[notbad_high]
+            # x = x[notbad_high]
+
+            x = np.append(x, [zero_cutoff + .0, zero_cutoff + 0.25, zero_cutoff + 0.5, zero_cutoff + 0.75,
+                              zero_cutoff + 1.0, zero_cutoff + 1.25, zero_cutoff + 1.5, zero_cutoff + 1.75,
+                              zero_cutoff + 2.0])
+            y = np.append(y, [0, 0, 0, 0, 0, 0, 0, 0, 0])
+            mid_weights = np.sum(init_weight[(good_rad[notbad_low] > 1.5) & (good_rad[notbad_low] < 3)])  # & (good_rad > 0.5)])
+            low_weights = np.sum(init_weight[(good_rad[notbad_low] < zero_cutoff/3)])  # & (good_rad > 0.5)])
+            print("weights:",mid_weights)
+            vary_wght = (mid_weights) / (outer + 1) ** (4) / 1.5
+            vary_wght = vary_wght * (0.001 / truemaxval) ** (1 / 2)  # adjust for if normalization is different (and curve is just naturally lower)
+            init_weight = np.append(init_weight,
+                                    [vary_wght / 4, vary_wght * 1, vary_wght * 4, vary_wght * 8, vary_wght * 16,
+                                     vary_wght * 32, vary_wght * 64, vary_wght * 128, vary_wght * 256])
+
+            # just add a couple very far out ones for general use
+            const_weight = mid_weights * (0.001 / truemaxval) ** (1 / 2)
+            x = np.append(x, [zero_cutoff + 1.5, zero_cutoff + 2.5, zero_cutoff + 3.5, zero_cutoff + 4.5])
+            y = np.append(y, [0, 0, 0, 0])
+            #vary_wght = (mid_weights) / min((outer + 1) ** (2), 10)
+            init_weight = np.append(init_weight,
+                                    [const_weight / 10, const_weight * 1, const_weight * 20, const_weight * 200])
+
+            # add the psuedo orbital as a loose guide
+            print("fitting to pseudo below:", zero_cutoff/5)
+            #low_weights = np.sum(init_weight[(good_rad[notbad_low] < zero_cutoff/3)])  # & (good_rad > 0.5)])
+            #low_weights = low_weights * (
+            #            0.001 / truemaxval)  # adjust for if normalization is different (and curve is just naturally lower)
+            new_rad = np.linspace(0, zero_cutoff/4, 30)
+            # new_rad = np.append(new_rad[:15],new_rad)
+            just_one = func_for_rad(new_rad, pa, pb, pc, pd, pe, pf, pg, ph, l=l)
+            pseudo_weights = (np.ones(len(new_rad)) / min(outer+1, 3) * low_weights
+                              /(np.arange(len(new_rad))**(3/2)+10)) # *np.sum(weights[good_rad > 0.1]) #*((num_loop)/(loop+1))**(1/2)
+            #pseudo_weights[:15] = pseudo_weights[:15] * 2
+            x = np.append(x, new_rad)
+            y = np.append(y, just_one)
+            init_weight = np.append(init_weight, pseudo_weights)  # use more for small systems with less points
+
+            sig = 1 / np.sqrt(init_weight + 0.00001)
+
+            pinit = [0.001, expcutoff / 2, 0.001, expcutoff, 1.01, test_cutoff / 1.5]
+            max_decay = 1.5 #min(1.2 + outer / 5, 1.5)
+            if outer > 1:
+                max_decay = 1.8
+            low_bounds = [-1.0, expcutoff * 0.05, 0.0001, expcutoff * 0.05, 1, test_cutoff / (2.)]
+            if no_node:
+                low_bounds = [0.0001, expcutoff * 0.05, 0.0001, expcutoff * 0.05, 1, test_cutoff / (2.)]
+                high_bounds = [3.0, expcutoff * 3, 3, expcutoff * 3, max_decay,
+                               test_cutoff * 1.2]
+            else:
+                low_bounds = [-1.0, expcutoff * 0.05, 0.0001, expcutoff * 0.05, 1, test_cutoff / 10]
+                high_bounds = [3.0, expcutoff * 3, 3, expcutoff * 3, max_decay,
+                               test_cutoff * 1.2]
+
+            pseudo_orb = func_for_rad(x, pa, pb, pc, pd, pe, pf, pg, ph, l=l)
+            # also get residual standard deviation
+            residuals = np.abs(y - pseudo_orb)
+            median = np.average(residuals, weights=init_weight)
+            avg_errordev = np.average(np.abs(residuals - median), weights=init_weight)
+            print("avg error deviation:", avg_errordev)
+
+            popt, pcov = curve_fit(new_fitting_func, x, y, p0=pinit, sigma=sig, bounds=(low_bounds, high_bounds),
+                                    method="trf", max_nfev=5000)#, #ftol=0.000001, xtol=0.000001,
+                                    #loss="soft_l1",f_scale=0.0001)#0.00005)#avg_errordev * 100) #huber
+            [a_n, b_n, c_n, d_n, e_n, f_n] = popt
+            print("new fit:", popt)
+            orbgroup_fancyparams[group_ind] = [a_n, b_n, c_n, d_n, e_n, f_n, l]
+            orbgroup_pseudoparams[group_ind] = [pa, pb, pc, pd, pe, pf, pg, ph, l]
+
+            # fit to one gaussian first before making new ratio values
+            # [a,b,c,d,e,f,g,h,l] = orbgroup_gausparams[group_ind]
+            # [a_e,b_e,c_e,d_e,e_e,f_e,l] = orbgroup_expparams[group_ind]
+
+            [a_n, b_n, c_n, d_n, e_n, f_n, l] = orbgroup_fancyparams[group_ind]
+            atom = self.orbatomnum[orbgroup[0]]
+            # cutoff = self.cutoff_rad[atom]*0.8#**(1/2)#*1.4
+            # expcutoff = 1/cutoff
+            # orbital dependant section
+            # now fit to just gaussian functions
+            new_rad = np.linspace(0, (cutoff / 2) ** (1 / 2) * 5, 100)
+            just_one = fit_variable_func(new_rad, a_n, b_n, c_n, d_n, e_n, f_n, l=l)
+            # just_one[new_rad>test_cutoff] = func_for_rad_exp(new_rad[new_rad>test_cutoff],a_e,b_e,c_e,d_e,e_e,f_e,l=l)
+
+            # use the original WF
+            # just_one = self.orig_radial[orbind]
+            weights = np.ones(len(new_rad))  # 1/(new_rad**(1/2)+0.2)
+            # if l != 0: # de-weight near zero
+            #    weights = 10*np.tanh(new_rad/2+0.1)/(new_rad**(3)+5)
+            # weights[new_rad>cutoff] = weights[new_rad>cutoff] * (just_one[new_rad>cutoff]/end_gaus)**(1/4) * 1.5
+            just_one = np.append(just_one, np.zeros(20))
+            new_rad = np.append(new_rad, np.linspace(cutoff + 1, cutoff + 3,
+                                                     20))  # [cutoff+1.5,cutoff+1.8,cutoff+2.2,cutoff+3])
+            weights = np.append(weights, np.linspace(0, 4, 20))  # [2,4,8,15])
+            # reduce weights for low r at l>0
+            if l != 0:
+                weights[new_rad < zero_cutoff/8] = weights[new_rad < zero_cutoff/8]/4
+
+            # set initial conditions
+            l = l
+            x = new_rad
+            y = just_one
+            min_cut = expcutoff / 8
+            if l == 2:
+                min_cut = expcutoff / 4
+
+            # use the pseudo parameters
+            [pa, pb, pc, pd, pe, pf, pg, ph, l] = orbgroup_pseudoparams[group_ind]
+            # pe = -abs(pa)/10
+            # pf = pb/10
+            # if abs(pe/pf) > abs(pa/pb):
+            #    pe = -pa/pb*pf/10
+            # constrain the gaussian to not have nodes UNLESS it is an excited state or a second s orbital (which is labeled in orbtype as s_ex or s2)
+            orbkey = self.orbtype[orbgroup[0]]
+            no_node = orbkey[0] == orbkey  # only is one character: 's', 'p', or 'd'
+            # if the s orbital has shifted such that is has node, allow node
+            # if not no_node:
+            #    # use the previously found start
+            #    [pa,pb,pc,pd,pe,pf,pg,ph] = [a,b,c,d,e,f,g,h]
+            # try fitting with contraints built into function so can use curve_fit)
+            max_aceg = np.amax(np.abs([pa, pc, pe, pg]))
+            pg = max_aceg / 5
+            init_con1 = pd / pb  # np.log( - 1)
+            init_con4 = 2 / 3  # np.log(- 1)
+            init_con3 = pf / pb  # np.log(pb/pf - 1)
+            init_con2 = pe / pf + pa / pb
+            gaus_init = [pa, pb, init_con1, init_con2, init_con3, pc, pg, init_con4]
+            gaus_fit = partial(func_for_rad_fit, l=l)
+            sig = 1 / (weights + 0.00001)
+            # max_aceg = np.max(np.abs([pa,pc,pe,pg]))
+            low_bounds = np.ones(8) * 0.000001  # [0,0,0,0,0,0,0,0]
+            high_bounds = [max_aceg * 10, new_cutoff * 3, 0.95, max_aceg * 10, 0.9, max_aceg * 10, max_aceg * 10,
+                           0.9]
+            if not no_node:  # allow node in fit
+                low_bounds[3] = -max_aceg * 10  # remove low bound for con2
+                high_bounds[4] = 5  # can be larger than b now, but generally is still not
+            gaus_init = np.array(gaus_init) + 0.000001
+            popt, pcov = curve_fit(gaus_fit, x, y, p0=gaus_init, sigma=sig, bounds=(low_bounds, high_bounds),
+                                   ftol=0.000001, xtol=0.000001, method="trf", max_nfev=2000)
+            # check how close output is to bounds
+            close_low = np.abs((popt - low_bounds) / popt)
+            close_high = np.abs((popt - high_bounds) / popt)
+            if ((close_low < 0.05).any() or (close_high < 0.05).any()) and self.verbose > 0:
+                print("warning very close to bounds!", l, np.arange(len(close_low))[close_low < 0.05],
+                      close_low[close_low < 0.05], np.arange(len(close_high))[close_high < 0.05],
+                      close_high[close_high < 0.05])
+            [t_a, t_b, con1, con2, con3, t_c, t_g, con4] = popt
+            t_d = con1 * t_b
+            t_f = con3 * t_b
+            t_e = (con2 - t_a / t_b) * t_f
+            t_h = con4 * t_b
+            # print("check lmfit params:",r_a,r_b,r_c,r_d,r_e,r_f,r_g,r_h)
+            # print("check scipy params:",t_a,t_b,t_c,t_d,t_e,t_f,t_g,t_h)
+            r_a, r_b, r_c, r_d, r_e, r_f, r_g, r_h = [t_a, t_b, t_c, t_d, t_e, t_f, t_g, t_h]
+            orbgroup_finalgausparams[group_ind] = [r_a, r_b, r_c, r_d, r_e, r_f, r_g, r_h, l]
+
+            # check error of final guassian fit
+            newgaus_one = func_for_rad(new_rad, r_a, r_b, r_c, r_d, r_e, r_f, r_g, r_h, l=l)
+            newgaus_diff = just_one - newgaus_one
+            origin_error = np.average(np.abs(newgaus_diff[new_rad < test_cutoff / 3])) / np.average(
+                np.abs(just_one[new_rad < test_cutoff / 3]))
+            # do allow pos + neg error cancelation in tail because often the gaus overshots while the exp undershots the tail area
+            tail_error = np.abs(np.average(newgaus_diff[new_rad > test_cutoff * 0.9])) / np.average(
+                just_one[new_rad > test_cutoff * 0.9])
+            abstail_error = np.average(np.abs(newgaus_diff[new_rad > test_cutoff * 0.9])) / np.average(
+                np.abs(just_one[new_rad > test_cutoff * 0.9]))
+            total_error = np.average(np.abs(newgaus_diff)) / np.average(np.abs(just_one))
+            # print("all final fit error: (origin,tail,all)",origin_error,abstail_error,tail_error,total_error)
+            final_gaus_fiterrors[orb_groups[group_ind], :] = np.array(
+                [origin_error, abstail_error, tail_error, total_error])[None, :]
+
+            if self.verbose > 0:
+                print("final gaus terms:", l, r_a, r_b, r_c, r_d, r_e, r_f, r_g, r_h)
+
+            # calculate errors
+            second_time = time.time()
+            for orb in orbgroup:
+                orbperatom = self.sph_harm_key[orb]
+
+                angular_part = complex128funs(phi, theta, self.orb_vec[orb])
+                # big_ang = np.abs(angular_part)>0.1
+                # new_rad_part = tot_orbWF[big_ang]/angular_part[big_ang]
+                just_one = np.zeros(len(rad))
+                just_one = func_for_rad(rad, r_a, r_b, r_c, r_d, r_e, r_f, r_g, r_h, l=l)
+                # just_one[rad<=cutoff] = func_for_rad(rad[rad<=cutoff],a,b,c,d,e,f,g,h,l=l)
+                # just_one[(rad>cutoff) & (rad<5*cutoff)] = func_for_rad_exp(rad[(rad>cutoff) & (rad<5*cutoff)],a_e,b_e,c_e,d_e,e_e,f_e,l=l)
+                tot_orbWF = just_one * angular_part
+                tot_orbWF[tot_orbWF == 0] = 0.000000000001
+
+                # get the error
+                unk = centered_orbs[orb].flatten().real
+                diff_orb = np.abs((tot_orbWF - unk))
+                orb_nrms[orb] = np.sqrt(np.average(np.square(diff_orb))) / np.sqrt(np.average(np.square(unk)))
+                orb_nme[orb] = np.average(np.abs(diff_orb)) / np.average(np.abs(unk))
+
+                # finally get the NME and NRMSE between the old atomic radial part and the wannier function
+                simple_rad = np.linspace(0, 5, num=100, endpoint=False)
+                orig_radial = self.cur_radial[orbgroup[0]]
+                new_radial = func_for_rad(simple_rad, r_a, r_b, r_c, r_d, r_e, r_f, r_g, r_h, l=l)
+                # align the maximums
+                orig_radial = orig_radial * np.amax(new_radial) / np.amax(orig_radial)  # scale orig_radial to align the new maximum (tends give smallest errors)
+                prev_orbWF = angular_part * interpolate.griddata(simple_rad,orig_radial,rad, method='cubic', fill_value=0)
+
+                diff_orb = np.abs((prev_orbWF - unk))
+                prev_orb_nrms[orb] = np.sqrt(np.average(np.square(diff_orb))) / np.sqrt(np.average(np.square(unk)))
+                prev_orb_nme[orb] = np.average(np.abs(diff_orb)) / np.average(np.abs(unk))
+                # print("NRMS:",orb,orb_nrms[orb])
+
+            third_time = time.time()
+
+        end_time = time.time()
+        fit_rad = end_time - start_time
+        if self.verbose > 2:
+            print("timing:", loop, make_rad, fit_rad, third_time - second_time, second_time - first_time)
+
+        # finally fit the total gaussian + exponential fit to a gaussian basis
+
+        plt_subplots = []
+        # and properly normalize the orbitals within the PAW basis
+        for group_ind, orbgroup in enumerate(orb_groups):
+            [a, b, c, d, e, f, g, h, l] = orbgroup_gausparams[group_ind]
+            [a_e, b_e, c_e, d_e, e_e, f_e, l] = orbgroup_expparams[group_ind]
+            [a_n, b_n, c_n, d_n, e_n, f_n, l] = orbgroup_fancyparams[group_ind]
+            [r_a, r_b, r_c, r_d, r_e, r_f, r_g, r_h, l] = orbgroup_finalgausparams[group_ind]
+            atom = self.orbatomnum[orbgroup[0]]
+            cutoff = self.cutoff_rad[atom] * 0.9 + np.tanh(
+                (self.init_orb_energy[orbgroup[0]] + 8) / 5) * 0.5  # self.cutoff_rad[atom]*0.8#**(1/2)#*1.4
+            expcutoff = 1 / cutoff
+            # orbital dependant section
+            # now fit to just gaussian functions
+            new_rad = np.linspace(0, (cutoff / 2) ** (1 / 2) * 5, 100)
+
+            # already fit the gaussian parameters so only do this for s2 states for orthing
+            # labels are all for s orbitals but works for other types too
+            orbkey = self.orbtype[orbgroup[0]]
+            no_node = orbkey[0] == orbkey
+            if orbkey[0] + "2" == orbkey:  # not no_node: # only do if this is a s2, p2, d2 state
+                # first get the overlap between the s semicore and s2 orbital
+                orbatm = self.orbatomnum[orb]
+                sphkey = self.sph_harm_key[orb]
+                sorb = np.arange(self.num_orbs)[
+                    (np.array(self.orbatomnum) == orbatm) & (np.array(self.orbtype) == orbkey[0]) & (
+                                np.array(self.sph_harm_key) == sphkey)][0]
+                for gind in range(len(orb_groups)):
+                    if (np.array(orb_groups[gind]) == sorb).any():
+                        sgroup_ind = gind
+                [s_a, s_b, s_c, s_d, s_e, s_f, s_g, s_h, l] = orbgroup_finalgausparams[sgroup_ind]
+                # converg_orbs[orb] = converg_orbs[orb] - aeoverlap[orb,sorb]/aeoverlap[sorb,sorb]*converg_orbs[sorb]
+
+                s2_orbital = func_for_rad(new_rad, r_a, r_b, r_c, r_d, r_e, r_f, r_g, r_h, l=l)
+                s_orbital = func_for_rad(new_rad, s_a, s_b, s_c, s_d, s_e, s_f, s_g, s_h, l=l)
+                # just_one[new_rad>cutoff] = func_for_rad_exp(new_rad[new_rad>cutoff],a_e,b_e,c_e,d_e,e_e,f_e,l=l)
+                # calculate the ae_overlap between the orbitals
+                # only do projectors that have the same center angular momentum as the orbital
+                num_projs = self.num_orbs + self.num_exorbs
+                all_sphharm = np.append(self.sph_harm_key, self.ex_sph_harm_key)
+                all_orbtype = np.append(self.orbtype, self.ex_orbtype)
+                all_orbatm = np.append(self.orbatomnum, self.exorbatomnum)
+                orb1 = orbgroup[0]  # each orbital in the group should have the same norm
+                sphharm1 = all_sphharm[orb1]
+                atm = all_orbatm[orb1]
+                nonzero = (all_sphharm == sphharm1) & (
+                            all_orbatm == atm)  # only nonzero if the orbs are on the same atom and have the same l and ml quantum nums
+                orbs = np.arange(num_projs, dtype=np.int_)[nonzero]
+
+                real_proj_data = self.atmProjectordata[self.elements[atom]]
+                proj_cutoff = real_proj_data[0]
+                real_proj_grid = np.linspace(0, proj_cutoff, num=100, endpoint=False)
+                # gaus_orb = func_for_rad(real_proj_grid,*old_params)
+                s2o = func_for_rad(real_proj_grid, r_a, r_b, r_c, r_d, r_e, r_f, r_g, r_h, l=l)
+                so = func_for_rad(real_proj_grid, s_a, s_b, s_c, s_d, s_e, s_f, s_g, s_h, l=l)
+                # gaus_gaus_orbs = gaus_orb * gaus_orb
+                s2s_aeoverlap = integrate.trapezoid((so * s2o) * real_proj_grid ** 2, x=real_proj_grid)
+                ss_aeoverlap = integrate.trapezoid((so * so) * real_proj_grid ** 2, x=real_proj_grid)
+                for orb1 in orbs:
+                    type1 = all_orbtype[orb1]
+                    gaus_proj_orbs1 = so * real_proj_data[1][type1]
+                    gaus_proj_norm1 = integrate.trapezoid((gaus_proj_orbs1) * real_proj_grid ** 2, x=real_proj_grid)
+                    for orb2 in orbs:
+                        type2 = all_orbtype[orb2]
+                        # for s-s2 overlap
+                        gaus_proj_orbs2 = s2o * real_proj_data[1][type2]
+                        gaus_proj_norm2 = integrate.trapezoid((gaus_proj_orbs2) * real_proj_grid ** 2, x=real_proj_grid)
+                        s2s_aeoverlap += gaus_proj_norm1 * Qab[orb1, orb2] * gaus_proj_norm2
+                        # for s-s overlap for norming
+                        gaus_proj_orbs2 = so * real_proj_data[1][type2]
+                        gaus_proj_norm2 = integrate.trapezoid((gaus_proj_orbs2) * real_proj_grid ** 2, x=real_proj_grid)
+                        ss_aeoverlap += gaus_proj_norm1 * Qab[orb1, orb2] * gaus_proj_norm2
+
+                psuedo_overlap = gaus_norm
+                individ_norm = ae_overlap
+                just_one = s2_orbital - s2s_aeoverlap / ss_aeoverlap * s_orbital
+
+                # use the original WF
+                # just_one = self.orig_radial[orbind]
+                weights = np.ones(len(new_rad))  # 1/(new_rad**(1/2)+0.5)
+                end_gaus = func_for_rad(cutoff, r_a, r_b, r_c, r_d, r_e, r_f, r_g, r_h, l)
+                # weights[new_rad>cutoff] = weights[new_rad>cutoff] * (just_one[new_rad>cutoff]/end_gaus)**(1/4) * 2
+                # just_one = np.append(just_one,[0,0,0,0])
+                # new_rad = np.append(new_rad,[cutoff+3,cutoff+4,cutoff+6,cutoff+8])
+                # weights = np.append(weights,[0.1,0.2,0.4,1.0])
+
+                # set initial conditions
+                l = l
+                x = new_rad
+                y = just_one
+                min_cut = expcutoff / 8
+                if l == 2:
+                    min_cut = expcutoff / 4
+
+                # use the pseudo parameters
+                [pa, pb, pc, pd, pe, pf, pg, ph, l] = orbgroup_pseudoparams[group_ind]
+                # constrain the gaussian to not have nodes UNLESS it is an excited state or a second s orbital (which is labeled in orbtype as s_ex or s2)
+                orbkey = self.orbtype[orbgroup[0]]
+                no_node = orbkey[0] == orbkey  # only is one character: 's', 'p', or 'd'
+                # if the s orbital has shifted such that is has node, allow node
+                # if not no_node:
+                # use the previously found start
+                [pa, pb, pc, pd, pe, pf, pg, ph] = [r_a, r_b, r_c, r_d, r_e, r_f, r_g, r_h]  # [a,b,c,d,e,f,g,h]
+
+                # try fitting with contraints built into function so can use curve_fit)
+                max_aceg = np.amax(np.abs([pa, pc, pe, pg]))
+                pg = max_aceg / 5
+                init_con1 = pd / pb  # np.log( - 1)
+                init_con4 = 2 / 3  # np.log(- 1)
+                init_con3 = pf / pb  # np.log(pb/pf - 1)
+                init_con2 = pe / pf + pa / pb
+                gaus_init = [pa, pb, init_con1, init_con2, init_con3, pc, pg, init_con4]
+                gaus_fit = partial(func_for_rad_fit, l=l)
+                sig = 1 / (weights + 0.00001)
+                # max_aceg = np.max(np.abs([pa,pc,pe,pg]))
+
+                # redefine new_cutoff
+                cutoff = self.cutoff_rad[atom] * 0.9 + np.tanh((self.init_orb_energy[orbgroup[0]] + 8) / 5) * 0.5
+                new_cutoff = cutoff ** (1 / 2)
+
+                low_bounds = np.ones(8) * 0.000001  # [0,0,0,0,0,0,0,0]
+                high_bounds = [max_aceg * 10, new_cutoff * 3, 0.95, max_aceg * 10, 1, max_aceg * 10, max_aceg * 10, 1]
+                if not no_node:  # allow node in fit
+                    low_bounds[3] = -max_aceg * 10  # remove low bound for con2
+                    high_bounds[4] = 5  # can be larger than b now, but generally is still not
+                popt, pcov = curve_fit(gaus_fit, x, y, p0=gaus_init, sigma=sig, bounds=(low_bounds, high_bounds),
+                                       ftol=0.000001, xtol=0.000001, method="trf", max_nfev=2000)
+                # check how close output is to bounds
+                close_low = np.abs((popt - low_bounds) / popt)
+                close_high = np.abs((popt - high_bounds) / popt)
+                if ((close_low < 0.05).any() or (close_high < 0.05).any()) and self.verbose > 0:
+                    print("warning very close to bounds!", l, np.arange(len(close_low))[close_low < 0.05],
+                          close_low[close_low < 0.05], np.arange(len(close_high))[close_high < 0.05],
+                          close_high[close_high < 0.05])
+                [t_a, t_b, con1, con2, con3, t_c, t_g, con4] = popt
+                t_d = con1 * t_b
+                t_f = con3 * t_b
+                t_e = (con2 - t_a / t_b) * t_f
+                t_h = con4 * t_b
+                # print("check lmfit params:",r_a,r_b,r_c,r_d,r_e,r_f,r_g,r_h)
+                # print("check scipy params:",t_a,t_b,t_c,t_d,t_e,t_f,t_g,t_h)
+                r_a, r_b, r_c, r_d, r_e, r_f, r_g, r_h = [t_a, t_b, t_c, t_d, t_e, t_f, t_g, t_h]
+                if self.verbose > 0:
+                    print("fitted params:", r_a, r_b, r_c, r_d, r_e, r_f, r_g, r_h, l)
+
+            # get values for plotting
+            good_rad = all_good_rad[orbgroup[0]]
+            radunk = all_radunk[orbgroup[0]]
+            weights = all_weights[orbgroup[0]]
+            for orbind, orb in enumerate(orbgroup[1:]):
+                radunk = np.append(radunk, all_radunk[orb])
+                good_rad = np.append(good_rad, all_good_rad[orb])
+                weights = np.append(weights, all_weights[orb])
+
+            if self.save_orb_figs or plot_orbs:
+                # plt.scatter(rad[big_ang],new_rad_part,c="red",s=1)
+                fig, ax = plt.subplots()
+                ax.plot(good_rad, radunk, 'o', color="blue", markersize=1 / 4, label="From approximate atomic")
+                new_rad = np.linspace(0, 5, 100)
+                # plot the original starting radial part
+                [nx, ny, nz] = self.gridxyz
+                ax.plot(new_rad, self.orig_radial[orbgroup[0]], color="black", linewidth=2.5, label="Pseudo orbital")
+                # plt.scatter(rad[big_ang],test_new[big_ang],facecolors="None",edgecolors="red")
+                just_one = fit_variable_func(new_rad, a_n, b_n, c_n, d_n, e_n, f_n, l=l)
+                # just_one = func_for_rad(new_rad,a,b,c,d,e,f,g,h,l=l)
+                # just_one[new_rad>cutoff] = func_for_rad_exp(new_rad[new_rad>cutoff],a_e,b_e,c_e,d_e,e_e,f_e,l=l)
+                # plt.ylim((0,0.0005))
+                ax.set_xlim((0, 5))
+                ax.plot(new_rad, just_one, color="purple", linewidth=2.5, label="intermediate fit")  # c=c,d=d,*popt
+
+                [pa, pb, pc, pd, pe, pf, pg, ph, l] = orbgroup_pseudoparams[group_ind]
+                new_rad = np.linspace(0, 8, 100)
+                ax.plot(new_rad, func_for_rad(new_rad, pa, pb, pc, pd, pe, pf, pg, ph, l=l), color="red", linewidth=1,
+                        label="Pseudo orbital")
+
+                # plot the just guassian fit
+                ax.plot(new_rad, func_for_rad(new_rad, r_a, r_b, r_c, r_d, r_e, r_f, r_g, r_h, l=l), color='#db61ed',
+                        linewidth=2.5, label="Final gaus fit")
+                plt.ylim((-0.001, 0.002))
+                ax.set_xlim((0, 4))
+                # print("showing plot")
+
+                ax.set_xlabel("Radius (Å)")
+                ax.set_ylabel("Radial part of orbital")
+                ax.legend()
+                plt_subplots.append(fig)
+                if plot_orbs:
+                    plt.show()
+                plt.close()
+
+            [a, b, c, d, e, f, g, h] = [r_a, r_b, r_c, r_d, r_e, r_f, r_g, r_h]
+            if self.use_pseudo:
+                [pa, pb, pc, pd, pe, pf, pg, ph, l] = orbgroup_pseudoparams[group_ind]
+                [a, b, c, d, e, f, g, h] = [pa, pb, pc, pd, pe, pf, pg, ph]
+                [b, d, f, h] = np.array([b, d, f, h]) * orbfactor
+
+            # now normalize for the PAW treatment
+            # find orbital projector overlap (overlap_OrbProj) and ae-psuedo diff (Qab)
+            if self.haveQab == False:
+                self.get_Qab()
+                self.haveQab = True
+            Qab = self.Qab
+
+            # change the coeffs so they normalize correctly
+            const = self.gridxyz[0] * self.gridxyz[1] * self.gridxyz[2] / self.vol ** (1 / 2)
+            if self.verbose > 1:
+                print("volume:", self.vol)
+                print("const", const)
+            [a, c, e, g] = np.array([a, c, e, g]) * const  # analytical calc
+
+            if self.use_pseudo or True:
+                orig_radial = self.cur_radial[orbgroup[0]]
+                orig_radial = orig_radial * const
+
+            # switch to a*e^-bx^2 format form a/b*e^-1/2(x/b)^2 format
+            old_params = copy.deepcopy([a, b, c, d, e, f, g, h, l])
+            # print("check same:",[a,b,c,d,e,f,g,h,l])
+            [a, c, e, g] = [a / b, c / d, e / f, g / h]
+            [b, d, f, h] = 1 / 2 / np.array([b, d, f, h]) ** 2
+            # print("as:", old_params,[a,b,c,d])
+
+            # normalize the orbital just with the onsite overlap
+            l = int(l)
+            orbind = orbgroup[0]
+            real_proj_data = self.atmProjectordata[self.elements[atom]]
+            proj_cutoff = real_proj_data[0]
+            real_proj_grid = np.linspace(0, proj_cutoff, num=100, endpoint=False)
+            gaus_orb = func_for_rad(real_proj_grid, *old_params)
+
+            # analytical integral of Gaussian funcs
+            # true_gauss_norm = [np.pi**(1/2)/4,1/2,3*np.pi**(1/2)/8][l] * (a*d**((3+l)/2)+c*b**((3+l)/2))/d**((3+l)/2)/b**((3+l)/2)
+            # gaus_gaus_int = [1,3,15][l]*np.pi**(1/2)*(a*c/(2**(1+l)*(d+b)**(3/2+l))+(a**2*d**(3/2+l)+c**2*b**(3/2+l))/(2**(7/2+2*l)*b**(3/2+l)*d**(3/2+l))) #analytical calc
+            fnt_coef = np.array([a, c, e, g])
+            exp_coef = np.array([b, d, f, h])
+            # gaus_norm = factorial2(1+2*l)*np.pi**(1/2)*(2**(-7/2-2*l)*np.sum(fnt_coef**2*exp_coef**(-3/2-l))+2**(-1-l)*np.prod(fnt_coef)*np.sum(exp_coef)**(-3/2-l))
+            gaus_norm = factorial2(1 + 2 * l) * np.pi ** (1 / 2) * 2 ** (-2 - l) * np.sum(
+                fnt_coef[:, None] * fnt_coef[None, :] * (exp_coef[:, None] + exp_coef[None, :]) ** (-3 / 2 - l))
+            # gaus_gaus_int = gaus_gaus_int *(self.gridxyz[0]*self.gridxyz[1]*self.gridxyz[2])**(2)/self.vol
+            # true_gauss_norm = true_gauss_norm * self.gridxyz[0]* self.gridxyz[1]* self.gridxyz[2]
+
+            # only do projectors that have the same center angular momentum as the orbital
+            num_projs = self.num_orbs + self.num_exorbs
+            all_sphharm = np.append(self.sph_harm_key, self.ex_sph_harm_key)
+            all_orbtype = np.append(self.orbtype, self.ex_orbtype)
+            all_orbatm = np.append(self.orbatomnum, self.exorbatomnum)
+            orb1 = orbgroup[0]  # each orbital in the group should have the same norm
+            sphharm1 = all_sphharm[orb1]
+            atm = all_orbatm[orb1]
+            nonzero = (all_sphharm == sphharm1) & (
+                        all_orbatm == atm)  # only nonzero if the orbs are on the same atom and have the same l and ml quantum nums
+            orbs = np.arange(num_projs, dtype=np.int_)[nonzero]
+
+            real_proj_data = self.atmProjectordata[self.elements[atom]]
+            proj_cutoff = real_proj_data[0]
+            real_proj_grid = np.linspace(0, proj_cutoff, num=100, endpoint=False)
+
+            if self.use_pseudo or True:  # this is normalizing the initial pseudo orbitals correctly
+                # first get norm and radius
+                orb_rad = np.linspace(0, 8, num=100, endpoint=False)
+                simple_rad = np.linspace(0, 5, num=100, endpoint=False)
+                pseudo_orb = interpolate.griddata(simple_rad, orig_radial, orb_rad, method='cubic',
+                                                  fill_value=0)  # for calculating pseudo norm and rad
+
+                pseudo_norm = integrate.trapezoid((pseudo_orb * pseudo_orb) * orb_rad ** 2, x=orb_rad)
+                pseudo_rad = integrate.trapezoid((pseudo_orb * pseudo_orb) / pseudo_norm * orb_rad ** 3, x=orb_rad)
+
+                pseudo_orb = interpolate.griddata(simple_rad, orig_radial, real_proj_grid, method='cubic',
+                                                  fill_value=0)  # for projecting on projectors
+                ae_overlap = pseudo_norm
+                for orb1 in orbs:
+                    type1 = all_orbtype[orb1]
+                    gaus_proj_orbs1 = pseudo_orb * real_proj_data[1][type1]
+                    gaus_proj_norm1 = integrate.trapezoid((gaus_proj_orbs1) * real_proj_grid ** 2, x=real_proj_grid)
+                    for orb2 in orbs:
+                        type2 = all_orbtype[orb2]
+                        gaus_proj_orbs2 = pseudo_orb * real_proj_data[1][type2]
+                        gaus_proj_norm2 = integrate.trapezoid((gaus_proj_orbs2) * real_proj_grid ** 2, x=real_proj_grid)
+                        ae_overlap += gaus_proj_norm1 * Qab[orb1, orb2] * gaus_proj_norm2
+
+                orig_radial = orig_radial / ae_overlap ** (1 / 2)
+
+            # back to the fitted gaussian orbital
+            gaus_orb = func_for_rad(real_proj_grid, *old_params)
+
+            # gaus_gaus_orbs = gaus_orb * gaus_orb
+            ae_overlap = gaus_norm
+            for orb1 in orbs:
+                type1 = all_orbtype[orb1]
+                gaus_proj_orbs1 = gaus_orb * real_proj_data[1][type1]
+                gaus_proj_norm1 = integrate.trapezoid((gaus_proj_orbs1) * real_proj_grid ** 2, x=real_proj_grid)
+                for orb2 in orbs:
+                    type2 = all_orbtype[orb2]
+                    gaus_proj_orbs2 = gaus_orb * real_proj_data[1][type2]
+                    gaus_proj_norm2 = integrate.trapezoid((gaus_proj_orbs2) * real_proj_grid ** 2, x=real_proj_grid)
+                    ae_overlap += gaus_proj_norm1 * Qab[orb1, orb2] * gaus_proj_norm2
+
+            psuedo_overlap = gaus_norm
+            individ_norm = ae_overlap
+
+            if self.verbose > 0:
+                print("pseudo norm and ae adjustments:", orbind, psuedo_overlap,
+                      individ_norm - psuedo_overlap)  # sum_overi)
+            [a, c, e, g] = [a, c, e, g] / individ_norm ** (1 / 2)
+
+            # if self.use_pseudo or True:
+            #    orig_radial = orig_radial / individ_norm ** (1 / 2)
+
+            # calculate the average (Bohr) radius # the orbital should be normed to pseudo since you want the pseudo-orbital radius
+            fnt_coef = np.array([a, c, e, g]) * individ_norm ** (1 / 2) / gaus_norm ** (1 / 2)
+            exp_coef = np.array([b, d, f, h])
+            avg_rad = 1 / 2 * math.factorial(1 + l) * np.sum(
+                fnt_coef[:, None] * fnt_coef[None, :] * (exp_coef[:, None] + exp_coef[None, :]) ** (
+                            -2 - l))  # analytical calc
+            old_rad = 1 / 8 * math.factorial(1 + l) * (
+                        2 ** (-l) * a ** 2 * b ** (-2 - l) + 2 ** (-l) * c ** 2 * d ** (-2 - l) + 8 * a * c * (
+                            b + d) ** (-2 - l))
+            if self.verbose > 0:
+                print("average radius!", avg_rad, old_rad)
+
+            fnt_coef = np.array([a, c, e, g])
+            newgaus_gaus_int = factorial2(1 + 2 * l) * np.pi ** (1 / 2) * 2 ** (-2 - l) * np.sum(
+                fnt_coef[:, None] * fnt_coef[None, :] * (exp_coef[:, None] + exp_coef[None, :]) ** (-3 / 2 - l))
+
+            # convert to reciprocal space
+            # g(k) = ∫j_l(kr)*g(r)*r^2*dr was done in mathematica to get the symbol conversion for analytical calc
+            ak = np.pi ** (1 / 2) * 2 ** (-2 - l) * a * b ** (
+                        -3 / 2 - l)  # *(self.num_kpts/self.vol)**(1/4)#* self.vol**(1/4)/np.pi**(3/4)
+            bk = 1 / 4 / b
+            ck = np.pi ** (1 / 2) * 2 ** (-2 - l) * c * d ** (
+                        -3 / 2 - l)  # *(self.num_kpts/self.vol)**(1/4)#* self.vol**(1/4)/np.pi**(3/4)
+            dk = 1 / 4 / d
+            ek = np.pi ** (1 / 2) * 2 ** (-2 - l) * e * f ** (-3 / 2 - l)
+            fk = 1 / 4 / f
+            gk = np.pi ** (1 / 2) * 2 ** (-2 - l) * g * h ** (-3 / 2 - l)
+            hk = 1 / 4 / h
+
+            # newgaus_gaus_int = [1,3,15][l]*np.pi**(1/2)*(a*c/(2**(1+l)*(d+b)**(3/2+l))+(a**2*d**(3/2+l)+c**2*b**(3/2+l))/(2**(7/2+2*l)*b**(3/2+l)*d**(3/2+l)))
+            fnt_coefk = np.array([ak, ck, ek, gk])
+            exp_coefk = np.array([bk, dk, fk, hk])
+            recipgaus_gaus_int = factorial2(1 + 2 * l) * np.pi ** (1 / 2) * 2 ** (-2 - l) * np.sum(
+                fnt_coefk[:, None] * fnt_coefk[None, :] * (exp_coefk[:, None] + exp_coefk[None, :]) ** (-3 / 2 - l))
+
+            # convert back to a/b*e^-1/2(x/b)^2 format from a*e^-bx^2 format
+            [b, d, f, h] = 1 / (2 * np.array([b, d, f, h])) ** (1 / 2)  # 1/2/np.array([b,d,f,h])**2
+            [a, c, e, g] = [a * b, c * d, e * f, g * h]
+
+            [bk, dk, fk, hk] = 1 / (2 * np.array([bk, dk, fk, hk])) ** (1 / 2)  # 1/2/np.array([b,d,f,h])**2
+            [ak, ck, ek, gk] = [ak * bk, ck * dk, ek * fk, gk * hk]
+
+            # finally get the NME and NRMSE between the new atomic radial part and the old one
+            simple_rad = np.linspace(0, 5, num=100, endpoint=False)
+            new_radial = func_for_rad(simple_rad, a, b, c, d, e, f, g, h, l=l)
+            # align the maximums
+            radial_diff = np.abs(orig_radial * np.amax(new_radial) / np.amax(
+                orig_radial) - new_radial)  # scale orig_radial to align the new maximum (tends give smallest errors)
+            orbrad_nrmse = np.sqrt(np.average(np.square(radial_diff))) / np.sqrt(
+                np.average(np.square(np.abs(new_radial))))
+            orbrad_nme = np.average(np.abs(radial_diff)) / np.average(np.abs(new_radial))
+
+            # save to orbital coeffs
+            for orb in orbgroup:
+                avg_radius[orb] = avg_rad
+                orbital_coeffs[orb] = np.array([a, b, c, d, e, f, g, h, l])
+                recip_orbcoeffs[orb] = np.array([ak, bk, ck, dk, ek, fk, gk, hk, l])
+                radial_nrmse[orb] = orbrad_nrmse
+                radial_nme[orb] = orbrad_nme
+
+                if self.use_pseudo:  # if using pseudo for other projection save back original pseudo
+                    self.cur_radial[orb] = orig_radial
+                else:  # save the new radial part
+                    self.cur_radial[orb] = new_radial
+
+            # recipgaus_gaus_int = [1,3,15][l]*np.pi**(1/2)*(ak*ck/(2**(1+l)*(dk+bk)**(3/2+l))+(ak**2*dk**(3/2+l)+ck**2*bk**(3/2+l))/(2**(7/2+2*l)*bk**(3/2+l)*dk**(3/2+l)))
+            if self.verbose > 0:
+                print("new norms:", newgaus_gaus_int, recipgaus_gaus_int)
+            # end orb dependant section
+
+        # save figures
+        if self.save_orb_figs:
+            combine_and_save_plots(plt_subplots, filename=self.directory + "fit_wannier_cogito" + self.tag + ".png")
+        # get percentage changes in radius
+        chang_from_pseudo = (avg_radius - self.pseudo_radius) / self.pseudo_radius
+        chang_from_last = (avg_radius - self.orb_radius) / self.orb_radius
+
+        print("orbital radius", np.around(avg_radius, decimals=4))
+        print("orbital percent change pseudo:", np.around(chang_from_pseudo * 100, decimals=2))
+        if self.verbose > 0:
+            print("orbital change last:", chang_from_last)
+            print("bloch nme:", orb_nme)
+        elif self.verbose > 1:
+            print("bloch nrmse:", orb_nrms)
+            print("radial nrmse:", radial_nrmse)
+            print("radial nme:", radial_nme)
+            print("final gaus errors:", final_gaus_fiterrors)
+        self.orb_nrms = orb_nrms
+        self.orb_nme = orb_nme
+        self.radial_nrmse = radial_nrmse
+        self.radial_nme = radial_nme
+        self.orb_radius = avg_radius
+        self.recip_orbcoeffs = recip_orbcoeffs
+        self.real_orbcoeffs = orbital_coeffs
+        all_loop_info = [avg_radius, chang_from_pseudo, chang_from_last, radial_nme, orb_nrms, orb_nme,
+                         final_gaus_fiterrors[:,
+                         3],prev_orb_nrms, prev_orb_nme,]  # orb_rad, orb_change_pseudo, orb_change_last, radial_change (nme), bloch_nrmse, bloch_nme,  final_gaus_fit_error
+        self.all_orbloop_info = all_loop_info
+        # print(self.sph_harm_key)
+        # print(self.recip_orbcoeffs)
+        # print(self.orb_radius)
+        # self.spher_bessel_trans(orbital_coeffs) # this is only useful to printing the recip radial orbital to text file
+
+        if self.use_pseudo:
+            self.recip_pseudo = self.spher_bessel_trans(orbital_coeffs)
+            self.recip_pseudo_grid = self.recip_rad_grid
+
+        # remake the original self.one_orbitalWF
+        recip_orbitalWF = self.get_kdep_reciporbs(0)  # for kpt=[0,0,0]
+        # self.one_orbitalWF = self.recip_to_real(recip_orbitalWF)
+        self.one_orbWFrecip = recip_orbitalWF
+
     def make_fit_wannier(self):
         
         wan_orbs = {}
@@ -7137,7 +8752,6 @@ class COGITO(object):
             #good_min_rad = all_good_min_rad[orbgroup[0]]
             #radunk = all_radunk[orbgroup[0]]
             #weights = all_weights[orbgroup[0]]
-            #og_radunk = all_og_orbs[orbgroup[0]]
             #plot_orbs = True
             if self.plot_orbs == True:
                 #plt.scatter(min_rad[big_ang],og_radunk[big_ang],c="black",s=2)
@@ -7458,13 +9072,14 @@ class COGITO(object):
         self.vec_to_trans = vec_to_trans
         self.num_each_dir = num_each_dir #np.floor(self.num_trans / 2,dtype=np.int_)
 
-        vec_to_orbs = np.zeros(vec_to_trans.shape,dtype=np.float64)
         test_params = np.zeros((trans1,trans2,trans3,self.num_orbs,self.num_orbs),dtype=np.complex128)
         #holdham = self.hamilton.flatten()
         #iszero = np.abs(holdham) < 0.000001
         #holdham[iszero] = 0
         #self.hamilton = np.reshape(holdham,(self.hamilton.shape))
         #print("orbital center offsets:", self.orb_center_offset)
+        '''
+        vec_to_orbs = np.zeros(vec_to_trans.shape,dtype=np.float64)
         for orb1 in range(self.num_orbs):
             for orb2 in range(self.num_orbs):
                 vec_to_orbs[:,:,:] = vec_to_trans[:,:,:] + self.orbpos[orb2] - self.orbpos[orb1] #+ self.orb_center_offset[orb2] - self.orb_center_offset[orb1]
@@ -7476,6 +9091,16 @@ class COGITO(object):
                     tb_param[:, :, :, orb1, orb2] += self.hamilton[orb1, orb2, kptind] * exp_fac
 
                     overlaps[:, :, :, orb1, orb2] += self.Sij[kptind][orb1, orb2] * exp_fac
+        '''
+        # vectorize...
+        vec_to_orbs = vec_to_trans[:, :, :,None,None] + self.orbpos[None,None,None,None,:] - self.orbpos[None,None,None,:,None]  # + self.orb_center_offset[orb2] - self.orb_center_offset[orb1]
+        for kptind, kpt in enumerate(self.kpoints):
+            exp_fac = np.exp(-2j*np.pi * np.matmul(vec_to_orbs,kpt))
+            #exp_fac = np.reshape(exp_fac,(trans1,trans2,trans3)) #np.around(,decimals=10)
+            #exp_factor = np.exp(2j * np.pi * np.dot(kpt, del_r))
+            tb_param += self.hamilton[None,None,None,:, :, kptind] * exp_fac
+            overlaps += self.Sij[kptind][None,None,None,:, :] * exp_fac
+
         #print("exp fac:",exp_fac)
         #print("ham:",self.hamilton.T)
         #print("coeff:",self.mnkcoefficients[:,:,:self.num_orbs])
@@ -8818,7 +10443,8 @@ class Tee: # just to print to terminal and save output to file
 
 def run_cogito(directory,save_metadata:bool=True, invariant=True, irreducible_grid=True, verbose=0, tag="", include_excited=1, calc_nrms=False, save_orb_converg_info:bool=True,
                          orbfactor=1.0, num_steps=50, num_outer=4, plot_orbs = False,
-                         min_proj=0.01, band_opt=True,orb_opt=True,orb_orth=False,start_from_orbnpy = False,plot_projBS = False,plot_projDOS=False,orbs = None,save_orb_data=False,save_orb_figs=False,minimum_orb_energy: float=-60,min_duplicate_energy:float=-60):
+                         min_proj=0.01, band_opt=True,orb_opt=True,orb_orth=False,start_from_orbnpy = False,plot_projBS = False,plot_projDOS=False,orbs = None,save_orb_data=False,
+                         save_orb_figs=False,minimum_orb_energy: float=-60,min_duplicate_energy:float=-60, wannier_fit=True):
     '''
     Runs COGITO. See generate_TBmodel() for a description of all the other arguments.
 
@@ -8860,6 +10486,7 @@ def run_cogito(directory,save_metadata:bool=True, invariant=True, irreducible_gr
             "save_orb_figs": save_orb_figs,
             "minimum_orb_energy": minimum_orb_energy,
             "min_duplicate_energy": min_duplicate_energy,
+            "wannier_fit": wannier_fit,
         }
 
         # save metadata
@@ -8879,7 +10506,7 @@ def run_cogito(directory,save_metadata:bool=True, invariant=True, irreducible_gr
                             save_orb_converg_info = save_orb_converg_info,orbfactor = orbfactor, num_steps = num_steps, num_outer = num_outer,
                             plot_orbs = plot_orbs,band_opt = band_opt, orb_opt = orb_opt, min_proj = min_proj,
                             start_from_orbnpy = start_from_orbnpy,save_orb_figs = save_orb_figs,
-                            minimum_orb_energy = minimum_orb_energy, min_duplicate_energy = min_duplicate_energy)
+                            minimum_orb_energy = minimum_orb_energy, min_duplicate_energy = min_duplicate_energy,wannier_fit=wannier_fit)
 
             if COGITOmodel.spin_polar:  # rerun with spin=1 for magnetic calculations
                 COGITOmodel = COGITO(directory, spin=1)
@@ -8888,7 +10515,7 @@ def run_cogito(directory,save_metadata:bool=True, invariant=True, irreducible_gr
                             save_orb_converg_info = save_orb_converg_info,orbfactor = orbfactor, num_steps = num_steps, num_outer = num_outer,
                             plot_orbs = plot_orbs,band_opt = band_opt, orb_opt = orb_opt, min_proj = min_proj,
                             start_from_orbnpy = start_from_orbnpy,save_orb_figs = save_orb_figs,
-                            minimum_orb_energy = minimum_orb_energy, min_duplicate_energy = min_duplicate_energy)
+                            minimum_orb_energy = minimum_orb_energy, min_duplicate_energy = min_duplicate_energy,wannier_fit=wannier_fit)
 
     else: # just run without saving any meta data
         COGITOmodel = COGITO(directory)
@@ -8899,7 +10526,7 @@ def run_cogito(directory,save_metadata:bool=True, invariant=True, irreducible_gr
                                      num_outer=num_outer,
                                      plot_orbs=plot_orbs, band_opt=band_opt, orb_opt=orb_opt, min_proj=min_proj,
                                      start_from_orbnpy=start_from_orbnpy, save_orb_figs=save_orb_figs,
-                                     minimum_orb_energy=minimum_orb_energy, min_duplicate_energy=min_duplicate_energy)
+                                     minimum_orb_energy=minimum_orb_energy, min_duplicate_energy=min_duplicate_energy,wannier_fit=wannier_fit)
 
         if COGITOmodel.spin_polar:  # rerun with spin=1 for magnetic calculations
             COGITOmodel = COGITO(directory, spin=1)
@@ -8910,7 +10537,7 @@ def run_cogito(directory,save_metadata:bool=True, invariant=True, irreducible_gr
                                          num_outer=num_outer,
                                          plot_orbs=plot_orbs, band_opt=band_opt, orb_opt=orb_opt, min_proj=min_proj,
                                          start_from_orbnpy=start_from_orbnpy, save_orb_figs=save_orb_figs,
-                                         minimum_orb_energy=minimum_orb_energy, min_duplicate_energy=min_duplicate_energy)
+                                         minimum_orb_energy=minimum_orb_energy, min_duplicate_energy=min_duplicate_energy,wannier_fit=wannier_fit)
 
 
 def main(argv=None):
@@ -8940,6 +10567,7 @@ def main(argv=None):
     cogito_args.add_argument("--start_orbnpy",help="If called, starts from previously output COGITO basis. Skips orbital convergence and goes to projection and TB model generation.",action='store_true') #
     cogito_args.add_argument("--minimum_orb_en",type=float,help="The lower limit to add semi-core states in the POTCAR into the COGITO basis.",default=-80)
     cogito_args.add_argument("--min_duplicate_en",type=float,help="The lower limit to add semi-core states when there is another valence state of the same l quantum number in the POTCAR into the COGITO basis.",default=-80)
+    cogito_args.add_argument("--old_bloch_fit",help="If called, performs the iterations and fit using the approximate local orbitals from the Bloch orbital at k=0, otherwise just directly uses the Wannier orbitals.",action='store_true') #not #
 
 
     args = cogito_args.parse_args(argv) # if args_manual==None then should take from command line
@@ -8949,7 +10577,7 @@ def main(argv=None):
                         save_orb_converg_info =not args.no_save_converg,orbfactor = args.orbfactor, num_steps = args.num_steps, num_outer = args.num_outer,
                         plot_orbs = args.plot_orbs,band_opt =not args.no_band_opt, orb_opt =not args.no_orb_opt, min_proj = args.min_proj,
                         start_from_orbnpy = args.start_orbnpy,save_orb_figs = args.save_orb_figs,
-                        minimum_orb_energy = args.minimum_orb_en, min_duplicate_energy = args.min_duplicate_en)
+                        minimum_orb_energy = args.minimum_orb_en, min_duplicate_energy = args.min_duplicate_en, wannier_fit = not args.old_bloch_fit)
 
 if __name__ == "__main__":
     raise SystemExit(main())

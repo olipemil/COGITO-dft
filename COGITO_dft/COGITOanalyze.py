@@ -38,8 +38,12 @@ def analyze_orb_converg_info(dir: str = '',tag: str = '',make_change_plot: bool 
     orb_change = np.array(orb_info["orb_change"])*100
     orb_change_periter = np.array(orb_info["orb_change_periter"])
     radial_change_periter = np.array(orb_info["radial_change_periter"])
-    bloch_nrmse_iter = np.array(orb_info["bloch_nrmse_iter"])
-    bloch_nme_iter = np.array(orb_info["bloch_nme_iter"])
+    try:
+        bloch_nrmse_iter = np.array(orb_info["bloch_nrmse_iter"])
+        bloch_nme_iter = np.array(orb_info["bloch_nme_iter"])
+    except:
+        bloch_nrmse_iter = np.array(orb_info["fit_nrmse_iter"])
+        bloch_nme_iter = np.array(orb_info["fit_nme_iter"])
     gaus_fit_error = np.array(orb_info["gaus_fit_error"])
 
 
