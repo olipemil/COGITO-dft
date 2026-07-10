@@ -18,10 +18,10 @@ To install optional dependences (scikit-image, dash, dash-ag-grid) that are used
 pip install "cogito-dft[plot]"
 ```
 
-To avoid thread oversubscription and possible stalls **(especially on HPC)**, set:
+To parallelize expensive numpy operations on HPC runs, set OMP_NUM_THREADS to a value compatible with available resources: (be careful not to set too high and oversubscribe)
 
 ```bash
-export OMP_NUM_THREADS=1
+export OMP_NUM_THREADS=8
 ```
 
 ## Quick Start
