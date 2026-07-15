@@ -18,7 +18,7 @@ import copy
 from functools import partial
 import plotly.graph_objects as go
 
-dist_version = "0.3.0"
+dist_version = "0.3.1"
 
 class COGITO(object):
     def __init__(self,wavecar_dir,readmode = False,spin=0,spin_polar = False):
@@ -507,6 +507,7 @@ class COGITO(object):
                 all_orb_info["gaus_fit_error"] = [] # just the error between the gaus+exp fit and gaus fit
                 all_orb_info["proj_nrmse_iter"] = []
                 all_orb_info["proj_nme_iter"] = []
+                all_orb_info["intermed_fit"] = []
 
             if not wannier_fit:
                 self.use_pseudo = orig_pseudo
@@ -574,6 +575,7 @@ class COGITO(object):
                         all_orb_info["fit_nme_iter"].append(list(self.all_orbloop_info[5]))
                         all_orb_info["proj_nrmse_iter"].append(list(self.all_orbloop_info[7]))
                         all_orb_info["proj_nme_iter"].append(list(self.all_orbloop_info[8]))
+                        all_orb_info["intermed_fit"].append(self.all_orbloop_info[9].tolist())
                 self.use_pseudo = orig_pseudo
 
             if save_orb_converg_info and not orig_pseudo:
@@ -865,8 +867,7 @@ class COGITO(object):
         #np.save(dir+"direct_bandnrms",converg_allnrmsband)
         '''
         
-        
-        
+
     def get_WFdata_fromPOT(self):
         """
         Function which reads the pseudo and ae orbital information from the POTCAR.
@@ -1044,7 +1045,7 @@ class COGITO(object):
             for orbs_lset in orb_info:
                 key = orbs_lset[0]
                 if key == 3:
-                    print("Congrats! f orbitals are now supported by COGITO (still testing)")
+                    print("Congrats! The f orbitals are now supported by COGITO.")
                     #raise Exception("f orbitals are not supported by COGITO at the moment, please try again later")
                 orb_type = ltoorbtype[key]
                 set_val = min(orbs_lset[1] - 1,1)
@@ -6878,11 +6879,11 @@ class COGITO(object):
         """
 
         orb_radmax = self.cutoff_rad[self.orbatomnum] * 0.8 + np.tanh((np.array(self.init_orb_energy) + 8) / 5) * 0.2
-        print(orb_radmax)
+        #print(orb_radmax)
         rad_max = np.amax(orb_radmax)+2.
         min_spac = min(np.amin(orb_radmax)*0.3,0.35)
-        print(rad_max)
-        print("spacing:",min_spac)
+        #print(rad_max)
+        print("Wannier grid spacing:",min_spac)
         prim_wangrid, prim_spac, grid_res = self.get_wannier_grid(spacing=min_spac,rad_max=rad_max) # rad_max is adjusted later per orbital
         cart_wangrid =  _red_to_cart((self._a[0], self._a[1], self._a[2]), prim_wangrid.transpose()).transpose()
         # define the maximum radius for each orbital seperately
@@ -6890,7 +6891,7 @@ class COGITO(object):
         #orb_radmax = self.cutoff_rad[self.orbatomnum] * 0.8 + np.tanh((self.init_orb_energy + 8) / 5) * 0.4
 
         wan_kpt_orbs = np.empty((self.num_kpts,self.num_orbs,len(prim_wangrid[0])),dtype=np.complex128)
-        print(self.num_kpts)
+        #print(self.num_kpts)
         for kpt in range(self.num_kpts):
             bands_spill = self.all_band_spillage[kpt]
             include_lowband = (((1 - bands_spill) > self.low_min_proj) | (self.eigval[kpt][:, 0] >= (
@@ -7327,7 +7328,7 @@ class COGITO(object):
         plane_dist = np.sum(self._a*perp_lines,axis=1)
         #print(perp_lines,self._a)
         grid_len = np.array([rad_max,rad_max,rad_max])/plane_dist
-        print(plane_dist,grid_len)
+        #print(plane_dist,grid_len)
         abc = np.linalg.norm(self._a,axis=1)
         if spacing == None: # not ideal...
             waste_ratio = abc/plane_dist
@@ -7336,13 +7337,13 @@ class COGITO(object):
         else:
             grid_res = np.array(np.around(grid_len*2*abc/spacing,decimals=0),dtype=int)
         grid_res[grid_res%2==0] = grid_res[grid_res%2==0] + 1
-        print(grid_res)
+        #print(grid_res)
         #if res%2==0: # ensure that the number is odd so centers at zero
         #    res = res+1
         #grid_res = np.array([res, res, res], dtype=int)
 
         prim_spac = grid_len * 2 / (grid_res - 1)
-        print(prim_spac,grid_len,grid_res)
+        #print(prim_spac,grid_len,grid_res)
         x, y, z = np.mgrid[-grid_len[0]: grid_len[0]: grid_res[0] * 1j, -grid_len[1]: grid_len[1]: grid_res[1] * 1j,
                   -grid_len[2]: grid_len[2]: grid_res[2] * 1j]
         #print(x.flatten())
@@ -7393,6 +7394,7 @@ class COGITO(object):
         avg_radius = np.zeros(self.num_orbs)
         radial_nrmse = np.zeros(self.num_orbs)
         radial_nme = np.zeros(self.num_orbs)
+        intermed_fit = np.zeros((self.num_orbs,7))
         final_gaus_fiterrors = np.zeros((self.num_orbs, 4))
         # shift all the orbitals so that it's atom is at [0,0,0] on the grid
 
@@ -7526,10 +7528,11 @@ class COGITO(object):
 
             # add extra points to help with the fitting of orbitals with a node (usually second s orbital)
             if not no_node and orbkey[0] == 's':  # only do for s orbitals
-                included_ratio = ratio[largeenough][positive][keep_point][inside_cut]
+                cutoff = self.cutoff_rad[atom] * 0.9 + np.tanh((self.init_orb_energy[orb] + 8) / 5) * 0.5
+                #included_ratio = ratio[largeenough][positive][keep_point][inside_cut]
                 # good_ratio = (included_ratio > 0.6) & (included_ratio < 2)
                 # below_cut = good_rad[good_ratio] < cutoff*1.1
-                gd_rat_low = (included_ratio > 0.6) & (included_ratio < 2) & (good_rad < cutoff)  # *1.1)
+                gd_rat_low = (good_rad < cutoff)  # *1.1)
                 max_unk = np.average(np.sort(radunk[gd_rat_low])[-15:])  # average max point
                 rad_at_max = np.average(
                     good_rad[gd_rat_low][np.abs(radunk[gd_rat_low] - max_unk) < max_unk * 0.2])
@@ -7666,7 +7669,8 @@ class COGITO(object):
                 #print("Changing sixth_cutoff:",sixth_cutoff, test_sixth)
                 sixth_cutoff = sixth_cutoff*0.5+test_sixth*0.5
             zero_cutoff = sixth_cutoff * 0.9 + 1.2
-            print("test cutoff:", test_cutoff, zero_cutoff, test_sixth, sixth_cutoff)
+            if self.verbose > 1:
+                print("test cutoff:", test_cutoff, zero_cutoff, test_sixth, sixth_cutoff)
 
             # x = np.append(x, np.linspace(zero_cutoff+0,zero_cutoff+4,10)) #[zero_cutoff + 2.0, zero_cutoff + 2.5, zero_cutoff + 3.0, zero_cutoff + 3.5,zero_cutoff + 4.0])
             # y = np.append(y, np.zeros(10))#[0, 0, 0, 0, 0])
@@ -7688,7 +7692,7 @@ class COGITO(object):
             y = np.append(y, [0, 0, 0, 0, 0, 0, 0, 0, 0])
             mid_weights = np.sum(init_weight[(good_rad[notbad_low] > 1.5) & (good_rad[notbad_low] < 3)])  # & (good_rad > 0.5)])
             low_weights = np.sum(init_weight[(good_rad[notbad_low] < zero_cutoff/3)])  # & (good_rad > 0.5)])
-            print("weights:",mid_weights)
+            #print("weights:",mid_weights)
             vary_wght = (mid_weights) / (outer + 1) ** (4) / 1.5
             vary_wght = vary_wght * (0.001 / truemaxval) ** (1 / 2)  # adjust for if normalization is different (and curve is just naturally lower)
             init_weight = np.append(init_weight,
@@ -7704,7 +7708,7 @@ class COGITO(object):
                                     [const_weight / 10, const_weight * 1, const_weight * 20, const_weight * 200])
 
             # add the psuedo orbital as a loose guide
-            print("fitting to pseudo below:", zero_cutoff/5)
+            #print("fitting to pseudo below:", zero_cutoff/5)
             #low_weights = np.sum(init_weight[(good_rad[notbad_low] < zero_cutoff/3)])  # & (good_rad > 0.5)])
             #low_weights = low_weights * (
             #            0.001 / truemaxval)  # adjust for if normalization is different (and curve is just naturally lower)
@@ -7739,13 +7743,14 @@ class COGITO(object):
             residuals = np.abs(y - pseudo_orb)
             median = np.average(residuals, weights=init_weight)
             avg_errordev = np.average(np.abs(residuals - median), weights=init_weight)
-            print("avg error deviation:", avg_errordev)
 
             popt, pcov = curve_fit(new_fitting_func, x, y, p0=pinit, sigma=sig, bounds=(low_bounds, high_bounds),
                                     method="trf", max_nfev=5000)#, #ftol=0.000001, xtol=0.000001,
                                     #loss="soft_l1",f_scale=0.0001)#0.00005)#avg_errordev * 100) #huber
             [a_n, b_n, c_n, d_n, e_n, f_n] = popt
-            print("new fit:", popt)
+            if self.verbose > 1:
+                print("avg error deviation:", avg_errordev)
+                print("new fit:", popt)
             orbgroup_fancyparams[group_ind] = [a_n, b_n, c_n, d_n, e_n, f_n, l]
             orbgroup_pseudoparams[group_ind] = [pa, pb, pc, pd, pe, pf, pg, ph, l]
 
@@ -8261,6 +8266,7 @@ class COGITO(object):
                 recip_orbcoeffs[orb] = np.array([ak, bk, ck, dk, ek, fk, gk, hk, l])
                 radial_nrmse[orb] = orbrad_nrmse
                 radial_nme[orb] = orbrad_nme
+                intermed_fit[orb] = orbgroup_fancyparams[group_ind].tolist()
 
                 if self.use_pseudo:  # if using pseudo for other projection save back original pseudo
                     self.cur_radial[orb] = orig_radial
@@ -8298,7 +8304,7 @@ class COGITO(object):
         self.real_orbcoeffs = orbital_coeffs
         all_loop_info = [avg_radius, chang_from_pseudo, chang_from_last, radial_nme, orb_nrms, orb_nme,
                          final_gaus_fiterrors[:,
-                         3],prev_orb_nrms, prev_orb_nme,]  # orb_rad, orb_change_pseudo, orb_change_last, radial_change (nme), bloch_nrmse, bloch_nme,  final_gaus_fit_error
+                         3],prev_orb_nrms, prev_orb_nme, intermed_fit]  # orb_rad, orb_change_pseudo, orb_change_last, radial_change (nme), bloch_nrmse, bloch_nme,  final_gaus_fit_error
         self.all_orbloop_info = all_loop_info
         # print(self.sph_harm_key)
         # print(self.recip_orbcoeffs)
