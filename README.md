@@ -23,6 +23,8 @@ pip install "cogito-dft[plot]"
 As of verison 0.3.2, compute heavy sections of COGITO.py are parallelized. Control the number of jobs and avoid thread oversubscription with:
 
 ```bash
+#SBATCH -N 1
+#SBATCH -n 1
 #SBATCH --cpus-per-task=4
 
 export OMP_NUM_THREADS=1
