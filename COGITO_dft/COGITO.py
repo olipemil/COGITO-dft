@@ -14,11 +14,30 @@ from scipy.special import spherical_jn,factorial2
 import math
 from os.path import exists
 import copy
-#import time
+import time
 from functools import partial
 import plotly.graph_objects as go
 
-dist_version = "0.3.1"
+dist_version = "0.3.2"
+
+# try parallelizing stuff
+import os
+from joblib import Parallel, delayed
+
+def get_n_jobs(default=1):
+    """
+    Determine number of workers from Slurm if available.
+    Intended for single-node multiprocessing with --cpus-per-task.
+    """
+    for var in ["SLURM_CPUS_PER_TASK", "SLURM_CPUS_ON_NODE"]:
+        value = os.environ.get(var)
+        if value is not None:
+            try:
+                return max(1, int(value))
+            except ValueError:
+                pass
+    return default
+
 
 class COGITO(object):
     def __init__(self,wavecar_dir,readmode = False,spin=0,spin_polar = False):
@@ -427,14 +446,14 @@ class COGITO(object):
                 # first get norm and radius
                 orb_rad = np.linspace(0, 8, num=100, endpoint=False)
                 simple_rad = np.linspace(0, 5, num=100, endpoint=False)
-                pseudo_orb = interpolate.griddata(simple_rad, orig_radial, orb_rad, method='cubic',
+                pseudo_orb = interpolate.griddata(simple_rad, orig_radial, orb_rad, method='linear',
                                                   fill_value=0)  # for calculating pseudo norm and rad
 
                 pseudo_norm = integrate.trapezoid((pseudo_orb * pseudo_orb) * orb_rad ** 2, x=orb_rad)
                 pseudo_rad = integrate.trapezoid((pseudo_orb * pseudo_orb) / pseudo_norm * orb_rad ** 3,
                                                  x=orb_rad)
 
-                pseudo_orb = interpolate.griddata(simple_rad, orig_radial, real_proj_grid, method='cubic',
+                pseudo_orb = interpolate.griddata(simple_rad, orig_radial, real_proj_grid, method='linear',
                                                   fill_value=0)  # for projecting on projectors
                 ae_overlap = pseudo_norm
                 for orb1 in orbs:
@@ -540,12 +559,14 @@ class COGITO(object):
                     # get all-election orbital overlap
                     time3 = time.time()
                     self.get_ae_overlap_info()
+                    time4 = time.time()
+                    print("elapsed time for projecting orbs:",time4 - time3)
                     # project orbitals on DFT wavefunctions
                     self.proj_all_kpoints(calc_nrms=False)
                     # self.optimize_band_set()
                     time4 = time.time()
                     elapsed_time4 += time4 - time3
-                    print("elapsed time for projecting orbs:",elapsed_time4)
+                    print("elapsed time for projecting orbs:",time4 - time3)
 
                     self.use_pseudo = orig_pseudo
                     if band_opt or orb_opt or orb_orth:  # if not (no optimize and nonorth orbitals)
@@ -1767,7 +1788,7 @@ class COGITO(object):
                     new_cutrad = pseudo_rad[-1]
                     rad_inside_cutoff = zeromin_rad<new_cutrad
                     rad_outide_cutoff = zeromin_rad>=new_cutrad
-                radial_part[rad_inside_cutoff] = interpolate.griddata(pseudo_rad,pseudo_data,zeromin_rad[rad_inside_cutoff],method='cubic', fill_value=pseudo_data[0])
+                radial_part[rad_inside_cutoff] = interpolate.griddata(pseudo_rad,pseudo_data,zeromin_rad[rad_inside_cutoff],method='linear', fill_value=pseudo_data[0])
                 if self.verbose > 1:
                     print("actual cutrad:",new_cutrad)
                 enddata = pseudo_data[pseudo_rad <= new_cutrad]
@@ -1783,7 +1804,7 @@ class COGITO(object):
                 angular_part = complex128funs(zeromin_phi,zeromin_theta,orb_vec)
                 atomic_WF[orb] = radial_part*angular_part
                 
-                og_radial[orb][simple_rad<new_cutrad] = interpolate.griddata(pseudo_rad,pseudo_data,simple_rad[simple_rad<new_cutrad],method='cubic', fill_value=pseudo_data[0])
+                og_radial[orb][simple_rad<new_cutrad] = interpolate.griddata(pseudo_rad,pseudo_data,simple_rad[simple_rad<new_cutrad],method='linear', fill_value=pseudo_data[0])
                 if not self.use_pseudo:
                     og_radial[orb][simple_rad>=new_cutrad] = a*simple_rad[simple_rad>=new_cutrad]**l*np.exp(-b*simple_rad[simple_rad>=new_cutrad]**2) 
                     #og_radial[orb][-1] = 0 # still bound to zero
@@ -4642,7 +4663,7 @@ class COGITO(object):
             l = orb_to_l[orb_peratom]
             radial_part = np.zeros((len(recip_rad)), dtype=np.complex128)
             #if l == 2: # cubic spline not
-            radial_part[recip_rad < proj_gmax] = interpolate.griddata(recip_proj_grid, recip_proj_dat[1][self.orbtype[orb]], recip_rad_cut, method='cubic', fill_value=recip_proj_dat[1][self.orbtype[orb]][0])
+            radial_part[recip_rad < proj_gmax] = interpolate.griddata(recip_proj_grid, recip_proj_dat[1][self.orbtype[orb]], recip_rad_cut, method='linear', fill_value=recip_proj_dat[1][self.orbtype[orb]][0])
             # define them just in normal xyz directions
             sphkey = self.sph_harm_key[orb]
             switch_to_vecs = [[1], [1, 0, 0], [0, 1, 0], [0, 0, 1], [1, 0, 0, 0, 0], [0, 1, 0, 0, 0], [0, 0, 1, 0, 0],
@@ -4676,7 +4697,7 @@ class COGITO(object):
             orb_peratom = self.ex_sph_harm_key[orb]
             l = orb_to_l[orb_peratom]
             radial_part = np.zeros((len(recip_rad)), dtype=np.complex128)
-            radial_part[recip_rad < proj_gmax] = interpolate.griddata(recip_proj_grid, recip_proj_dat[1][self.ex_orbtype[orb]], recip_rad_cut, method='cubic', fill_value=recip_proj_dat[1][self.ex_orbtype[orb]][0])
+            radial_part[recip_rad < proj_gmax] = interpolate.griddata(recip_proj_grid, recip_proj_dat[1][self.ex_orbtype[orb]], recip_rad_cut, method='linear', fill_value=recip_proj_dat[1][self.ex_orbtype[orb]][0])
             angular_part = complex128funs(recip_phi, recip_theta, self.ex_orb_vec[orb])
             center = self.primAtoms[atomnum]
             exp_term = np.exp(-2j * np.pi * np.dot(all_gpnts, center))  # center the projector correctly
@@ -4752,7 +4773,7 @@ class COGITO(object):
 
         return recip_orbs
 
-    def proj_all_kpoints(self,max_bandavg = None,calc_nrms=False):
+    def proj_all_kpoints(self,max_bandavg = None,calc_nrms=False, n_jobs=None, backend="threading"):
         num_kpts = self.num_kpts
         allspillage = np.zeros((num_kpts,self.max_band))
         charge_spill = np.zeros((num_kpts))
@@ -4789,94 +4810,46 @@ class COGITO(object):
                 print("-",end="")
         print("")
 
-        for kpt in range(num_kpts):
-            if self.verbose > 1:
-                print("kpt:",kpt,self.kpoints[kpt])
-            DFT_wavefunc = np.array(self.recip_WFcoeffs[kpt])  # [band,gpoint]
-            adjusted_orbs = self.get_kdep_reciporbs(kpt)
-            overlap = self.get_overlap_matrix(adjusted_orbs, recip=True)
-            ae_overlap = self.Sij[kpt]
-            coeff = self.get_aecoefficients(adjusted_orbs, DFT_wavefunc, ae_overlap,kpt,recip=True)
+        if n_jobs is None:
+            n_jobs = get_n_jobs(default=1)
 
-            inv_orth_coeff = np.matmul(np.conj(coeff), ae_overlap).T  # np.linalg.inv(orth_coeff) #np.conj(orth_coeff.T)
-            orb_mixing = np.matmul(coeff.T, inv_orth_coeff.T)
-            np.fill_diagonal(orb_mixing, 0)
-            max_orbmixing_allbands[kpt] = np.amax(np.abs(orb_mixing))
-            if self.verbose > 0:
-                print("orb mixing of all bands:", len(coeff), np.amax(np.abs(orb_mixing)))
-            
+        n_jobs = min(n_jobs, num_kpts)
 
-            self.mnkcoefficients[kpt] = coeff
+        if n_jobs == 1:
+            results = [
+                self._project_one_kpoint(kpt, calc_nrms=calc_nrms)
+                for kpt in range(num_kpts)
+            ]
+        else:
+            results = Parallel(n_jobs=n_jobs, backend=backend)(
+                delayed(self._project_one_kpoint)(kpt, calc_nrms=calc_nrms)
+                for kpt in range(num_kpts)
+            )
 
-            #reconstruct the LCAO wavefunction and find error
+        # Assemble results serially.
+        for result in results:
+            kpt = result["kpt"]
+
+            self.mnkcoefficients[kpt] = result["coeff"]
+            allspillage[kpt] = result["allspillage"]
+            charge_spill[kpt] = result["charge_spill"]
+            max_charge_spill[kpt] = result["max_charge_spill"]
+            max_orbmixing[kpt] = result["max_orbmixing"]
+            max_orbmixing_allbands[kpt] = result["max_orbmixing_allbands"]
+
             if calc_nrms:
-                orth_extra_wf = np.zeros(DFT_wavefunc.shape,dtype=np.complex128)
-                trueWFs = np.zeros(DFT_wavefunc.shape,dtype=np.complex128)
-                orth_orb_wfs = np.zeros(DFT_wavefunc.shape,dtype=np.complex128)
-                rms = []
-                nrms = []
-                nme = []
-                for band in range(self.max_band):
-                    trueWF = DFT_wavefunc[band]
-                    orb_coeff = np.zeros(trueWF.shape, dtype=np.complex128)
-                    for temporb in range(self.num_orbs):
-                        orbWF = adjusted_orbs[temporb]#orth_orbs
-                        orb_coeff += orbWF * coeff[band][temporb]
-                    orth_orb_wfs[band] = orb_coeff
-                    orth_extra_wf[band] = trueWF - orb_coeff
-                    trueWFs[band] = trueWF
-                    normalize_rms = np.sqrt(np.average(np.square(np.abs(DFT_wavefunc[band]))))
-                    normalize_me = np.average(np.abs(DFT_wavefunc[band]))
-                    rms.append(np.sqrt(np.average(np.square(orth_extra_wf[band].real)+np.square(orth_extra_wf[band].imag))))
-                    nrms.append(np.sqrt(np.average(np.square(orth_extra_wf[band].real)+np.square(orth_extra_wf[band].imag)))/normalize_rms)
-                    nme.append(np.average(np.abs(orth_extra_wf[band]))/normalize_me)
+                total_nrms.append(result["nrms"])
+                total_nme.append(result["nme"])
 
-                if self.verbose > 0:
-                    #print("rms:",rms)
-                    print("nrms:",np.around(nrms,decimals=3))
-                total_nrms.append(nrms)
-                total_nme.append(nme)
-                all_nrms.append(np.average(nrms[:self.num_orbs]))
-
-            spillage = np.zeros(self.max_band)
-            for band in range(self.max_band):
-                spillage[band] = np.matmul(np.conj(coeff[band]), np.matmul(ae_overlap, coeff[band].transpose())).real
-
-            allspillage[kpt] = 1 - spillage
-
-            is_valence = self.eigval[kpt][:,0]<=(self.efermi+self.energy_shift)
-            val_spill = allspillage[kpt][is_valence]
-            charge_spill[kpt] = np.sum(np.abs(val_spill)) / len(val_spill)
-            max_charge_spill[kpt] = np.amax(val_spill)
-            if ((1-spillage)<0).any():
-                if self.verbose > 1:
-                    print("warning!!! your charge spillage is negative, which is unphysical")
-                else:
-                    print("!", end="")
-            else:
-                if self.verbose < 2:
-                    print("-", end="")
-
-            if self.verbose > 0:
-                print("spill:",np.around(1-spillage,decimals=3))
-
-            bands_spill = 1 - spillage
-            include_lowband = (((1 - bands_spill) > self.low_min_proj) | (self.eigval[kpt][:, 0] >= (
-                        self.efermi + self.energy_shift - 5)))  # only False for bad low energy bands
-            include_bands = (include_lowband) & (bands_spill < (1.0 - self.min_proj))
-            #coeff_mult = np.matmul(red_coeff[:, include_bands], np.conj(red_coeff.T)[include_bands])
-            inv_orth_coeff = np.matmul(np.conj(coeff[include_bands]),ae_overlap).T  # np.linalg.inv(orth_coeff) #np.conj(orth_coeff.T)
-            orb_mixing = np.matmul(coeff[include_bands].T,inv_orth_coeff.T)
-            np.fill_diagonal(orb_mixing,0)
-            max_orbmixing[kpt] = np.amax(np.abs(orb_mixing))
-            if self.verbose > 0:
-                print("orb mixing:",len(coeff),np.amax(np.abs(orb_mixing)))
+        print("".join("!" if r['negative_spill'] else "-" for r in results))
 
         #avg spillage per band
         #print(np.sum(self.kpt_weights),self.kpt_weights)
         avgbandspillage = np.sum(allspillage*self.kpt_weights[:,None],axis=0)
         tot_charge_spill = np.sum(charge_spill*self.kpt_weights)
         self.all_band_spillage = allspillage
+        self.max_orb_mixing = max_orbmixing
+        self.max_band_spilling = max_charge_spill
         #self.mnkcoefficients = np.trunc(self.mnkcoefficients.real*10**6)/10**6 + np.trunc(self.mnkcoefficients.imag*10**6)/10**6*1j
         #print("og coeff:",self.mnkcoefficients)
         print("")
@@ -4908,8 +4881,6 @@ class COGITO(object):
         error_file.write("all bands avg orbmix: "+ str(np.around(np.sum(max_orbmixing_allbands*self.kpt_weights)*100,decimals=2))+"%\n")
         error_file.write("all bands max orbmix: "+ str(np.around(np.amax(max_orbmixing_allbands)*100,decimals=2))+"%\n")
         #wannier_hr.write(str(int(max1/2))+" "+str(int(max2/2))+" "+str(int(max3/2))+" "+str(self.num_orbs)+"\n")
-        self.max_orb_mixing = max_orbmixing
-        self.max_band_spilling = max_charge_spill
 
         error_file.write("avg spill per band:\n")
         rounded_array = np.around(avgbandspillage,decimals=4)
@@ -4955,7 +4926,107 @@ class COGITO(object):
                 #line = ' '.join(map(str, rounded_array[i:i+6]))
                 line = ' '.join(f"{x:8.4f}" for x in rounded_array[i:i+6])
                 error_file.write(line + '\n')
-            
+
+
+    def _project_one_kpoint(self, kpt, calc_nrms=False):
+        """
+        Compute all projection quantities for one k-point.
+        """
+        DFT_wavefunc = np.array(self.recip_WFcoeffs[kpt])  # [band,gpoint]
+        adjusted_orbs = self.get_kdep_reciporbs(kpt)
+        ae_overlap = self.Sij[kpt]
+        coeff = self.get_aecoefficients(adjusted_orbs, DFT_wavefunc, ae_overlap, kpt, recip=True)
+
+        inv_orth_coeff = np.matmul(np.conj(coeff), ae_overlap).T  # np.linalg.inv(orth_coeff) #np.conj(orth_coeff.T)
+        orb_mixing = np.matmul(coeff.T, inv_orth_coeff.T)
+        np.fill_diagonal(orb_mixing, 0)
+        max_orbmixing_allbands = np.amax(np.abs(orb_mixing))
+        if self.verbose > 0:
+            print("orb mixing of all bands:", len(coeff), np.amax(np.abs(orb_mixing)))
+
+        #self.mnkcoefficients[kpt] = coeff
+
+        # reconstruct the LCAO wavefunction and find error
+        rms = []
+        nrms = []
+        nme = []
+        if calc_nrms:
+            orth_extra_wf = np.zeros(DFT_wavefunc.shape, dtype=np.complex128)
+            trueWFs = np.zeros(DFT_wavefunc.shape, dtype=np.complex128)
+            orth_orb_wfs = np.zeros(DFT_wavefunc.shape, dtype=np.complex128)
+            for band in range(self.max_band):
+                trueWF = DFT_wavefunc[band]
+                orb_coeff = np.zeros(trueWF.shape, dtype=np.complex128)
+                for temporb in range(self.num_orbs):
+                    orbWF = adjusted_orbs[temporb]  # orth_orbs
+                    orb_coeff += orbWF * coeff[band][temporb]
+                orth_orb_wfs[band] = orb_coeff
+                orth_extra_wf[band] = trueWF - orb_coeff
+                trueWFs[band] = trueWF
+                normalize_rms = np.sqrt(np.average(np.square(np.abs(DFT_wavefunc[band]))))
+                normalize_me = np.average(np.abs(DFT_wavefunc[band]))
+                rms.append(
+                    np.sqrt(np.average(np.square(orth_extra_wf[band].real) + np.square(orth_extra_wf[band].imag))))
+                nrms.append(np.sqrt(np.average(
+                    np.square(orth_extra_wf[band].real) + np.square(orth_extra_wf[band].imag))) / normalize_rms)
+                nme.append(np.average(np.abs(orth_extra_wf[band])) / normalize_me)
+
+            if self.verbose > 0:
+                # print("rms:",rms)
+                print("nrms:", np.around(nrms, decimals=3))
+            #total_nrms.append(nrms)
+            #total_nme.append(nme)
+            #all_nrms.append(np.average(nrms[:self.num_orbs]))
+
+        spillage = np.zeros(self.max_band)
+        for band in range(self.max_band):
+            spillage[band] = np.matmul(np.conj(coeff[band]), np.matmul(ae_overlap, coeff[band].transpose())).real
+
+        allspillage = 1 - spillage
+
+        is_valence = self.eigval[kpt][:, 0] <= (self.efermi + self.energy_shift)
+        val_spill = allspillage[is_valence]
+        charge_spill = np.sum(np.abs(val_spill)) / len(val_spill)
+        max_charge_spill = np.amax(val_spill)
+        negative_spill = ((1 - spillage) < 0).any()
+
+        #if negative_spill:
+        #    if self.verbose > 1:
+        #        print("warning!!! your charge spillage is negative, which is unphysical")
+        #    else:
+        #        print("!", end="")
+        #else:
+        #    if self.verbose < 2:
+        #        print("-", end="")
+
+        if self.verbose > 0:
+            print("spill:", np.around(1 - spillage, decimals=3))
+
+        bands_spill = 1 - spillage
+        include_lowband = (((1 - bands_spill) > self.low_min_proj) | (self.eigval[kpt][:, 0] >= (
+                self.efermi + self.energy_shift - 5)))  # only False for bad low energy bands
+        include_bands = (include_lowband) & (bands_spill < (1.0 - self.min_proj))
+        # coeff_mult = np.matmul(red_coeff[:, include_bands], np.conj(red_coeff.T)[include_bands])
+        inv_orth_coeff = np.matmul(np.conj(coeff[include_bands]),
+                                   ae_overlap).T  # np.linalg.inv(orth_coeff) #np.conj(orth_coeff.T)
+        orb_mixing = np.matmul(coeff[include_bands].T, inv_orth_coeff.T)
+        np.fill_diagonal(orb_mixing, 0)
+        max_orbmixing = np.amax(np.abs(orb_mixing))
+        if self.verbose > 0:
+            print("orb mixing:", len(coeff), np.amax(np.abs(orb_mixing)))
+
+        return {
+            'kpt':kpt,
+            'coeff':coeff,
+            'allspillage':allspillage,
+            'charge_spill':charge_spill,
+            'max_charge_spill':max_charge_spill,
+            'max_orbmixing':max_orbmixing,
+            'max_orbmixing_allbands':max_orbmixing_allbands,
+            'negative_spill':negative_spill,
+            'nrms':nrms,
+            'nme':nme,
+        }
 
     def optimize_band_set(self,band_opt=True,orb_opt=True,orb_orth=False):
         """
@@ -6867,7 +6938,7 @@ class COGITO(object):
 
         return self.hamilton
 
-    def make_irred_wannier(self):
+    def make_irred_wannier(self,n_jobs=None, backend="threading"):
         """
         This function is being made because there is no way to gaurentee that the Hirshfeld-like fitting of the Bloch orbital is invariant with primitive cell size.
         After much trying on the Bloch fitting, I am giving up and trying a direct Wannier fit. However, I would like it to be as fast as possible.
@@ -6892,30 +6963,27 @@ class COGITO(object):
 
         wan_kpt_orbs = np.empty((self.num_kpts,self.num_orbs,len(prim_wangrid[0])),dtype=np.complex128)
         #print(self.num_kpts)
-        for kpt in range(self.num_kpts):
-            bands_spill = self.all_band_spillage[kpt]
-            include_lowband = (((1 - bands_spill) > self.low_min_proj) | (self.eigval[kpt][:, 0] >= (
-                        self.efermi + self.energy_shift - 5)))  # only False for bad low energy bands
-            include_bands = (include_lowband) & (bands_spill < (1.0 - self.min_proj))
-            nonorth_coeff = self.mnkcoefficients[kpt][include_bands]
-            band_coeff = np.matmul(np.conj(nonorth_coeff), self.Sij[kpt])
-            # get the Cogitwo basis
-            DFT_wavefunc = self.recip_WFcoeffs[kpt][include_bands]
-            gvecs = np.array(self.gpoints[kpt])
-            gplusk_coords = (gvecs.transpose() + np.array([self.kpoints[kpt]]).transpose()).T
 
-            #for orb in range(self.num_orbs):
-            all_centers = self.primAtoms[self.orbatomnum].T
-            exp_term = np.exp(2j * np.pi * np.dot(gvecs, all_centers)) # [gpt, orb]
+        if n_jobs is None:
+            n_jobs = get_slurm_njobs(default=1)
 
-            # cur_sum = DFT_wavefunc[0] * 0
-            cur_sum = np.matmul(band_coeff.T, DFT_wavefunc) # [orb, gpnt]
-            pln_wv = np.exp(2j * np.pi * np.dot(gplusk_coords, prim_wangrid)) # [num gpoints, num wan real points]
-            #print(pln_wv.shape)
+        n_jobs = min(n_jobs, self.num_kpts)
 
-            wan_kpt_orbs[kpt] = np.matmul(cur_sum * exp_term.T, pln_wv)
+        if n_jobs == 1:
+            results = [
+                self._make_one_kpt_wan(kpt,prim_wangrid)
+                for kpt in range(self.num_kpts)]
+        else:
+            results = Parallel(n_jobs=n_jobs, backend=backend)(
+                delayed(self._make_one_kpt_wan)(kpt, prim_wangrid)
+                for kpt in range(self.num_kpts))
+
+        for result in results:
+            kpt = result["kpt"]
+            wan_kpt_orbs[kpt] = result["wan_orbs"]
+
             if self.verbose > 0:
-                print("done with",kpt)
+                print("done with", kpt)
 
         fast_sym = True
         if fast_sym:
@@ -6941,6 +7009,51 @@ class COGITO(object):
                 fig.show()
 
         return wan_orbs, prim_wangrid
+
+    def _make_one_kpt_wan(self, kpt, prim_wangrid):
+        """
+        Construct wan_kpt_orbs[kpt] for one k-point.
+
+        Args:
+            kpt (int): The k-point index.
+            prim_wangrid (3D array): The 3D real-space grid in reduced coordinates.
+
+        Returns:
+            dict{"kpt": kpt, "wan_orbs": (np.ndarray of shape [num_orbs, num_real_points])}
+
+        """
+
+        bands_spill = self.all_band_spillage[kpt]
+        include_lowband = (((1.0 - bands_spill) > self.low_min_proj) |
+                           (self.eigval[kpt][:, 0]>= (self.efermi + self.energy_shift - 5.0)))
+        include_bands = include_lowband & (bands_spill < (1.0 - self.min_proj))
+        nonorth_coeff = self.mnkcoefficients[kpt][include_bands]
+
+        band_coeff = np.matmul(np.conj(nonorth_coeff),self.Sij[kpt])
+        DFT_wavefunc = self.recip_WFcoeffs[kpt][include_bands]
+        gvecs = np.asarray(self.gpoints[kpt])
+        kvec = np.asarray(self.kpoints[kpt])
+
+        # Equivalent to your transpose expression, but clearer.
+        gplusk_coords = gvecs + kvec[None, :]
+
+        all_centers = self.primAtoms[self.orbatomnum].T
+        exp_term = np.exp(
+            2j * np.pi * (gvecs @ all_centers)
+        )  # [gpoint, orb]
+
+        cur_sum = band_coeff.T @ DFT_wavefunc  # [orb, gpoint]
+
+        pln_wv = np.exp(
+            2j * np.pi * (gplusk_coords @ prim_wangrid)
+        )  # [gpoint, real_point]
+
+        A = np.ascontiguousarray(cur_sum * exp_term.T)
+        B = np.ascontiguousarray(pln_wv)
+
+        wan_orbs = A @ B  # [orb, real_point]
+
+        return {"kpt": kpt,"wan_orbs": wan_orbs}
 
     def expand_wannier(self,wan_kpt_orbs,prim_wangrid, prim_spac, grid_res):
         # expand wan_kpt_orbs to cover full red k-point grid
@@ -7001,25 +7114,27 @@ class COGITO(object):
         num_irkpt = len(irrec_kpts)
 
         wan_irkpt_orbs = wan_kpt_orbs  # [kpt,orb,real_grid]
+        ir_wan_orbs = np.sum(wan_kpt_orbs*self.kpt_weights[:,None,None],axis=0)
         shape = wan_irkpt_orbs.shape
 
         #allwan_redkpt_orbs = np.empty((num_reduc, shape[1], shape[2]), dtype=np.complex128)
         totwan_redkpt_orbs = np.zeros((shape[1], shape[2]), dtype=np.complex128)
 
         # transform to the reducible kpts
-        for kpt in range(num_reduc):
+        num_symopt = len(cart_operations)
+        for onum in range(num_symopt):
             # get the eigenvecs the normal way
-            cart_opt = cart_operations[symopt_ind[kpt]]
+            cart_opt = cart_operations[onum]
             full_opt = cart_opt[:3, :3]  # np.linalg.inv()
-            prim_opt = operations[symopt_ind[kpt]][:3, :3]  # .T
+            prim_opt = operations[onum][:3, :3]  # .T
             # print(prim_opt)
-            prim_shift = operations[symopt_ind[kpt]][:3, 3]
+            prim_shift = operations[onum][:3, 3]
             sym_opt = full_opt
             # print(prim_opt)
             # print("sym opt:",sym_opt)
             shift = cart_opt[:3, 3]
 
-            ir_coeffs = wan_irkpt_orbs[reduc_toir[kpt]]  # [orb,real_grid]
+            ir_coeffs = ir_wan_orbs #wan_irkpt_orbs[reduc_toir[kpt]]  # [orb,real_grid]
             red_coeff = np.empty(ir_coeffs.shape,dtype=np.complex128)
 
             old_atms = []
@@ -7222,10 +7337,10 @@ class COGITO(object):
             # red_coeff = (red_coeff.T * phase_shift).T
 
             # also include time symmetry
-            if is_opposite[kpt]:
-                if self.verbose > 2:
-                    print("at time sym point!", kpt)
-                red_coeff = np.conj(red_coeff)
+            #if is_opposite[kpt]:
+            #    if self.verbose > 2:
+            #        print("at time sym point!", kpt)
+            #    red_coeff = np.conj(red_coeff)
 
             # now have to shift the primitive cell grid of the wannier functions
             # generate from irred gpnts
@@ -7311,7 +7426,7 @@ class COGITO(object):
 
         #wan_kpt_orbs = allwan_redkpt_orbs
         #return wan_kpt_orbs
-        return totwan_redkpt_orbs/num_reduc
+        return totwan_redkpt_orbs/num_symopt
 
     def get_wannier_grid(self,res:int=31,rad_max:float=4.0,spacing:float=0.2):
 
@@ -8160,13 +8275,13 @@ class COGITO(object):
                 # first get norm and radius
                 orb_rad = np.linspace(0, 8, num=100, endpoint=False)
                 simple_rad = np.linspace(0, 5, num=100, endpoint=False)
-                pseudo_orb = interpolate.griddata(simple_rad, orig_radial, orb_rad, method='cubic',
+                pseudo_orb = interpolate.griddata(simple_rad, orig_radial, orb_rad, method='linear',
                                                   fill_value=0)  # for calculating pseudo norm and rad
 
                 pseudo_norm = integrate.trapezoid((pseudo_orb * pseudo_orb) * orb_rad ** 2, x=orb_rad)
                 pseudo_rad = integrate.trapezoid((pseudo_orb * pseudo_orb) / pseudo_norm * orb_rad ** 3, x=orb_rad)
 
-                pseudo_orb = interpolate.griddata(simple_rad, orig_radial, real_proj_grid, method='cubic',
+                pseudo_orb = interpolate.griddata(simple_rad, orig_radial, real_proj_grid, method='linear',
                                                   fill_value=0)  # for projecting on projectors
                 ae_overlap = pseudo_norm
                 for orb1 in orbs:
