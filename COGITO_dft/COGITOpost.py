@@ -1782,6 +1782,7 @@ class COGITO_TB_Model(object):
     def filter_all_indices(self,orbs: list, max_dist:float=None, min_dist:float=None, NN: int=None, include_onsite: bool=False):
         """
         Filter the total 5D (norb, norb, nT1, nT2, nT3) interactions down. Doing this makes calculating COHP and other matrices much faster.
+
         Args:
             self (obj): COGITO_TB_Model class
             orbs (list): List of two lists of orb numbers, e.g. [[1,2,3,5,6,7],[1,2,3,4,5,6,7,8]]. Cannot be dictionary.
@@ -2218,6 +2219,7 @@ class COGITO_BAND(object): # ought to pass the class COGITO_TB_Model
     def get_pymatgen_bandstruc(self, mulliken: bool=True):
         """
         This function will generate a pymatgen bandstructure class object that is projected with the COGITO orbitals.
+
         Args:
             self: COGITO_BAND object
             mulliken: Whether to do mulliken projection or onsite projection. For nonorthogonal basis, the sum of the onsite projection
@@ -3316,6 +3318,7 @@ class COGITO_UNIFORM(object):
     def get_pymatgen_bandstruc(self, mulliken: bool=True):
         """
         This function will generate a pymatgen bandstructure class object that is projected with the COGITO orbitals.
+        
         Args:
             self: COGITO_UNIFORM object
             mulliken: Whether to do mulliken projection or onsite projection. For nonorthogonal basis, the sum of the onsite projection
