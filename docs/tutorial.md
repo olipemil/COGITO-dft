@@ -21,10 +21,16 @@ pip install "cogito-dft[plot]"
 ~~~
 ```
 
-To avoid thread oversubscription and possible stalls **(especially on HPC)**, set:
+### Running on HPC
+
+As of verison 0.3.2, compute heavy sections of COGITO.py are parallelized. Control the number of jobs and avoid thread oversubscription with the settings below. Modify `cpus-per-task` for optimal performance.
 
 ```{tab} bash
 ~~~ bash
+#SBATCH -N 1
+#SBATCH -n 1
+#SBATCH --cpus-per-task=4
+
 export OMP_NUM_THREADS=1
 ~~~
 ```
