@@ -1738,7 +1738,7 @@ class COGITO_TB_Model(object):
     def atmorb_dict_to_ind(self,orbdict):
         """
         This function converts an element+orbtype dictionary into the related orbital indices.
-        If
+
         Args:
             self: COGITO_TB_Model (or derivative) class
             curorbdict (dict/list): Either a dict giving elements as keys and orbital types as items (eg {"Pb":["s","d"],"O":["s","p"]})
@@ -1750,7 +1750,7 @@ class COGITO_TB_Model(object):
                                     "orbital spherical harmonics combo" section of tb_input.txt.
 
         Returns:
-            List of orbital indices for the given dict.
+            list: List of orbital indices for the given dict.
         """
 
         # find the orbitals of this dict
@@ -2223,7 +2223,8 @@ class COGITO_BAND(object): # ought to pass the class COGITO_TB_Model
             mulliken: Whether to do mulliken projection or onsite projection. For nonorthogonal basis, the sum of the onsite projection
                         is <1 for bonding states and >1 (often by 2-5x) for antibonding states.
 
-        Returns: pymatgen BandStructureSymmLine object
+        Returns:
+            obj: Pymatgen BandStructureSymmLine object
         """
 
         from pymatgen.electronic_structure.core import Spin
@@ -3320,7 +3321,8 @@ class COGITO_UNIFORM(object):
             mulliken: Whether to do mulliken projection or onsite projection. For nonorthogonal basis, the sum of the onsite projection
                         is <1 for bonding states and >1 (often by 2-5x) for antibonding states.
 
-        Returns: pymatgen BandStructureSymmLine object
+        Returns:
+            object: Pymatgen BandStructureSymmLine object
         """
         from pymatgen.electronic_structure.core import Spin
 
@@ -3367,7 +3369,8 @@ class COGITO_UNIFORM(object):
                         is <1 for bonding states and >1 (often by 2-5x) for antibonding states. 
 
 
-        Returns: pymatgen CompleteDos object
+        Returns:
+            object: Pymatgen CompleteDos object
 
         """
 
@@ -8055,6 +8058,7 @@ def get_simple_fermi(shifted_energies, kpnt_coords, kpt_grid, e_cut: float = 0.0
         b_vecs (NDArray): The reciprocal space vectors used to translate the isosurface back to cartesian coordinates if plotting.
         plot_iso (float): Whether to plot an html pop-up using plotly of the isosurface.
     Returns:
+        tuple: The vertices (k-point coordinates) and faces of the Fermi surface.
 
     """
 
