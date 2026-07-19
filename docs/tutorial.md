@@ -265,7 +265,7 @@ COGITOpost --dir "Si/" --densify 1.0  --no_save_quality_info --no_save_crystal_b
 from COGITO_dft.COGITOpost import COGITO_UNIFORM as CoUN
 import numpy as np
 
-densify = 1.0 # increase for better DOS plots
+densify = 1.0 # increase for better sampling on DOS plots
 new_grid = np.array(np.around(np.array(my_CoTB.num_trans) * densify, decimals=0),dtype=int)
 # new_grid = [10,10,10] # can also just set manually
 
@@ -339,7 +339,7 @@ The get_COHP function requires specifying two sets of orbitals. All bonds betwee
 # make the unifom class object
 from COGITO_dft.COGITOpost import COGITO_UNIFORM as CoUN
 import numpy as np
-densify = 1.0 # increase for better DOS plots
+densify = 1.0 # increase for better sampling on DOS plots
 new_grid = np.array(np.around(np.array(my_CoTB.num_trans) * densify, decimals=0),dtype=int)
 my_CoUN = CoUN(my_CoTB, grid=new_grid) # create uniform class
 
@@ -354,7 +354,7 @@ my_CoUN.get_projectedDOS("Si",ylim=(-10,5),sigma=0.09) # sigma is gaussian smear
 # orbs_dict = [[0,1,2,3],[4,5,6,7]] # include bonds between the first silicon atom and second silicon atom
 
 orbs_dict = [{"Si":["s","p","d"]},{"Si":["s","p","d"]}] # for silicon
-my_CoUN.get_COHP(orbs_dict, NN='All')
+CoUN.get_COHP_DOS(my_CoUN, orbs_dict, NN='All')
 ~~~
 ```
 
@@ -383,7 +383,7 @@ my_CoTB.restrict_params(maximum_dist=15, minimum_value=0.00001)
 
 # now create band structure
 from COGITO_dft.COGITOpost import COGITO_BAND as CoBS
-my_CoBS = CoBS(my_CoTB, num_kpts = 10) # num_kpts is actually num per line, so set low
+my_CoBS = CoBS(my_CoTB, line_density = 10) # line_density is num kpts per line segment, so set low
 # plot band structure
 my_CoBS.plotBS() # or plotlyBS()
 ~~~
@@ -402,7 +402,7 @@ atomic orbital in the band wavefunction. Mulliken population analysis is used he
 ```{tab} python
 ~~~ python
 # plot the projected band structure of Si s orbitals
-my_CoBS.get_projectedBS({"Si":["s"]})
+CoBS.plot_projectedBS(my_CoBS, {"Si":["s"]})
 ~~~
 ```
 
@@ -428,11 +428,11 @@ Any COHP requires specifying two sets of orbitals. The bonds between any orbital
 # orbs_dict = [[0,1,2,3],[4,5,6,7]] # include bonds between the first silicon atom and second silicon atom
 
 orbs_dict = [{"Si":["s","p","d"]},{"Si":["s","p","d"]}] # for silicon
-my_CoBS.get_COHP(orbs_dict, NN='All')
+CoBS.plot_COHP(my_CoBS, orbs_dict, NN='All')
 
 # bonus points for running the interactive dash app
 # this populates the autogenerates options for orbs_dict for the user to choose from
-my_CoBS.make_COHP_dashapp()
+CoBS.make_COHP_dashapp(my_CoBS)
 ~~~
 ```
 
@@ -441,4 +441,62 @@ my_CoBS.make_COHP_dashapp()
         <iframe src="Si/COHP_BS.html" style="width: 100%; height: 95%; border: 0;"></iframe>
     </div>
 </div>
+
+<br>
+
+### Export to pymatgen objects
+
+COGITO can export its orbital projection results as pymatgen objects, giving access to pymatgen's electronic-structure plotting and analysis. However, selection of specific orbital types (e.g. 'px' or 'dxy') will not correct. This is because COGITO uses the local environment to define each orbital as a linear combination of all 2l+1 spherical harmonics such that COGITO is invariant to arbitrary coordinate changes. This combination is found in the "orbital spherical harmonics combo" section of tb_input.txt.
+
+Pymatgen objects for COHP/COOP analysis are not available for output (the number of added Cohp objects would be infeasible, and I prefer the speed and selection abilities of get_COHP/COOP() based methods in COGITOpost or integrated value analysis with COGITO's bond json files).
+
+**Projected DOS via pymatgen**<br>
+The function `get_pymatgen_completedos` returns a pymatgen `CompleteDos` object built from the COGITO orbital projections. This can be passed directly to pymatgen's `DosPlotter` for spd-projected or element-projected DOS plots.
+
+```{tab} python
+~~~ python
+from COGITO_dft.COGITOpost import COGITO_UNIFORM as CoUN
+from pymatgen.electronic_structure.plotter import DosPlotter
+import matplotlib.pyplot as plt
+import numpy as np
+
+densify = 1.0 # increase for better sampling on DOS plots
+new_grid = np.array(np.around(np.array(my_CoTB.num_trans) * densify, decimals=0), dtype=int)
+my_CoUN = CoUN(my_CoTB, grid=new_grid)
+
+# returns a pymatgen CompleteDos object
+cogito_dos = CoUN.get_pymatgen_completedos(my_CoUN)
+
+# example plotting
+plotter = DosPlotter(zero_at_efermi=True, sigma=0.05)
+plotter.add_dos("Total", cogito_dos)
+plotter.add_dos_dict(cogito_dos.get_spd_dos())
+
+ax = plotter.get_plot(xlim=(-10, 10))
+plt.show()
+~~~
+```
+
+**Projected band structure via pymatgen**<br>
+The function `get_pymatgen_bandstruc` in both uniform and bandstructure COGITO classes returns a pymatgen `BandStructureSymmLine` object with COGITO orbital projections attached. This can be passed to pymatgen's `BSPlotterProjected` for customizable projected band structure plots.
+
+```{tab} python
+~~~ python
+from COGITO_dft.COGITOpost import COGITO_BAND as CoBS
+from pymatgen.electronic_structure.plotter import BSPlotterProjected
+import matplotlib.pyplot as plt
+
+my_CoBS = CoBS(my_CoTB, line_density=50)
+
+# returns a pymatgen BandStructureSymmLine object with COGITO projections
+cogito_bs = CoBS.get_pymatgen_bandstruc(my_CoBS)
+
+# example plotting
+plotter = BSPlotterProjected(cogito_bs)
+axes = plotter.get_projected_plots_dots({"Si": ["s"]}, ylim=(-10, 10))
+
+figure = axes[0].figure
+plt.show()
+~~~
+```
 

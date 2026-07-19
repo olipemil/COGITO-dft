@@ -10,6 +10,7 @@ from pymatgen.io.vasp.outputs import Eigenval
 import matplotlib.pyplot as plt
 import copy
 import math
+from scipy.linalg import eigh
 
 class COGITO_TB_Model(object):
     def __init__(self, directory: str, verbose: int = 0, file_suffix: str = "", file_type: str="npy",tb_file:str="TBparams",
@@ -147,6 +148,29 @@ class COGITO_TB_Model(object):
             else:
                 break
 
+        sphharm = []
+        countp = 0
+        countd = 0
+        countf = 0
+        for ot in exactorbtype:
+            if 's' in ot:
+                sphharm.append(0)
+            if 'p' in ot:
+                sphharm.append(int(1+countp))
+                countp = countp + 1
+                if countp > 2:
+                    countp = 0
+            if 'd' in ot:
+                sphharm.append(int(4+countd))
+                countd = countd + 1
+                if countd > 4:
+                    countd = 0
+            if 'f' in ot:
+                sphharm.append(int(9+countd))
+                countd = countd + 1
+                if countd > 6:
+                    countd = 0
+
         num_orbs = len(orbatomnum)
         # read in the orbital vec for sphharm combo
         allorb_vecs = []
@@ -158,22 +182,6 @@ class COGITO_TB_Model(object):
         else: # will just be normal sph harm
             # make sphharm from exactorbtype
             # (this is definitely not fully correct and depends on the versions ordering of xyz, etc)
-            sphharm = []
-            countp = 0
-            countd = 0
-            for ot in exactorbtype:
-                if 's' in ot:
-                    sphharm.append(0)
-                if 'p' in ot:
-                    sphharm.append(int(1+countp))
-                    countp = countp + 1
-                    if countp > 2:
-                        countp = 0
-                if 'd' in ot:
-                    sphharm.append(int(1+countd))
-                    countd = countd + 1
-                    if countd > 4:
-                        countd = 0
             switch_to_vecs = [[1], [1, 0, 0], [0, 1, 0], [0, 0, 1], [1, 0, 0, 0, 0], [0, 1, 0, 0, 0], [0, 0, 1, 0, 0],
                               [0, 0, 0, 1, 0], [0, 0, 0, 0, 1],
                               [1, 0, 0, 0, 0, 0, 0], [0, 1, 0, 0, 0, 0, 0], [0, 0, 1, 0, 0, 0, 0],
@@ -182,6 +190,7 @@ class COGITO_TB_Model(object):
             for key in sphharm:
                 allorb_vecs.append(switch_to_vecs[key])
         self.orb_vec = allorb_vecs
+        self.sph_harm_key = sphharm
 
         if self.verbose > 2:
             print("orbitals:",orbs_pos,orbatomnum)
@@ -467,8 +476,8 @@ class COGITO_TB_Model(object):
 
     def restrict_params(self,maximum_dist: float = 12.0, minimum_value: float = 0.0001) -> None:
         """
-        Generates self.use_tbparams, self.use_overlaps, and self.use_vecs_to_orbs which are used in the gen_ham() funciton.
-        With this, the calculation of hamiltonians by gen_ham() is both sparse and vectorized.
+        Generates self.use_tbparams, self.use_overlaps, and self.use_vecs_to_orbs which are used in the get_ham() funciton.
+        With this, the calculation of hamiltonians by get_ham() is both sparse and vectorized.
 
         Args:    
             maximum_dist (float): The maximmum distance between hopping parameters which should be included.
@@ -757,40 +766,41 @@ class COGITO_TB_Model(object):
 
         # get eigenvalues and vectors from generalized eigenvalue problem
         else:
-            kdep_Sij = kdep_overlap
-            #self.Sij[kpt] = kdep_Sij
-            #print("check overlap:",kdep_Sij)
-
-            eigenvalj, kdep_Dij = np.linalg.eigh(kdep_Sij)
-            # check correctness of eigen
-            # construct Aij
-            kdep_Aij = np.zeros((self.num_orbs, self.num_orbs), dtype=np.complex128)
-            #for j in range(self.num_orbs):
-            kdep_Aij[:, :] = kdep_Dij[:, :] / (eigenvalj[None,:]) ** (1 / 2)
-            #get ham for orthogonal eigenvectors
-            conj_Aij = np.conj(kdep_Aij).transpose()
-            AtHA = np.matmul(conj_Aij,np.matmul(ham,kdep_Aij))
-            AtHA = (AtHA + np.conj(AtHA).T)/2 # ensure that the hamiltonian is perfectly Hermitian
-            #ham = np.matmul(np.linalg.inv(conj_Aij),np.matmul(AtHA,np.linalg.inv(kdep_Aij)))
-            eigval,eigvec = np.linalg.eigh(AtHA)
-            if return_truevec == True:
-                true_eigvec = np.matmul(kdep_Aij,eigvec)
+            use_scipy = True
+            if use_scipy:
+                eigval, true_eigvec = eigh(ham,b=kdep_overlap)
             else:
-                true_eigvec = eigvec
-                
-            # test that you can reconstruct the hamiltonian from eigenvecs
-            test_AtHA = np.matmul(eigvec,np.matmul(np.diag(eigval), np.linalg.inv(eigvec)))
-            #newAtHA = (AtHA + np.conj(AtHA).T)/2
-            diff_AtHA = AtHA - test_AtHA
-            if (diff_AtHA.flatten() > 0.00001).any():
-                print("couldn't construct the same ham!",diff_AtHA.flatten()[diff_AtHA.flatten() > 0.00001])
-            #else:
-            #    print("success")
+                eigenvalj, kdep_Dij = np.linalg.eigh(kdep_overlap)
+                # check correctness of eigen
+                # construct Aij
+                kdep_Aij = np.zeros((self.num_orbs, self.num_orbs), dtype=np.complex128)
+                #for j in range(self.num_orbs):
+                kdep_Aij[:, :] = kdep_Dij[:, :] / (eigenvalj[None,:]) ** (1 / 2)
+                #get ham for orthogonal eigenvectors
+                conj_Aij = np.conj(kdep_Aij).transpose()
+                AtHA = np.matmul(conj_Aij,np.matmul(ham,kdep_Aij))
+                AtHA = (AtHA + np.conj(AtHA).T)/2 # ensure that the hamiltonian is perfectly Hermitian
+                #ham = np.matmul(np.linalg.inv(conj_Aij),np.matmul(AtHA,np.linalg.inv(kdep_Aij)))
+                eigval,eigvec = np.linalg.eigh(AtHA)
+                if return_truevec == True:
+                    true_eigvec = np.matmul(kdep_Aij,eigvec)
+                else:
+                    true_eigvec = eigvec
+
+                # test that you can reconstruct the hamiltonian from eigenvecs
+                test_AtHA = np.matmul(eigvec,np.matmul(np.diag(eigval), np.linalg.inv(eigvec)))
+                #newAtHA = (AtHA + np.conj(AtHA).T)/2
+                diff_AtHA = AtHA - test_AtHA
+                if (diff_AtHA.flatten() > 0.00001).any():
+                    print("couldn't construct the same ham!",diff_AtHA.flatten()[diff_AtHA.flatten() > 0.00001])
+                #else:
+                #    print("success")
 
         if return_overlap == True and self.orbs_orth == False:
-            return eigval, true_eigvec, kdep_Sij#Aij, ham
+            return eigval, true_eigvec, kdep_overlap#Aij, ham
         else:
             return eigval,true_eigvec
+
     @staticmethod
     def get_fullHam(self: object, kpt: list, spin: int = 0):
         """
@@ -1262,105 +1272,39 @@ class COGITO_TB_Model(object):
         return band_dist, max_error, band_error
 
     @staticmethod
-    def get_COHP(self: object, orbs: dict, NN: int=None, include_onsite: bool=False,spin: int = 0,normalize:bool=False) -> npt.NDArray:
+    def get_COHP(self: object, orbs: dict, max_dist:float=None, min_dist:float=None, NN: int=None, include_onsite: bool=False,spin: int = 0,normalize:bool=False) -> npt.NDArray:
         """
         Calculates the COHP for the given orbitals and nearest neighbors.
 
         Args:    
             self (object): An object of the class COGITO_BAND or COGITO_UNIFORM.
-            orbs (dict): Either a list of two dictionaries giving elements as keys and orbital types as items (eg [{"Pb":["s","d"],"O":["s","p"]},{"Pb":["s"]"O":["p"]}]) or give list of orb numbers [[1,2,3,5,6,7],[1,2,3,4,5,6,7,8]].
-            NN (int): An integer for which nearest neighbor number to include (eg 1 for 1NN) or None or "All" for all nearest neighbors.
+            orbs (dict): Either a list of two dictionaries giving elements as keys and orbital types as items (eg [{"Pb":["s","d"],"O":["s","p"]},{"Pb":["s"]"O":["p"]}])
+                        or give list of orb numbers [[1,2,3,5,6,7],[1,2,3,4,5,6,7,8]]. See atmorb_dict_to_ind() for more details.
+            max_dist (float): The maximum distance to include. Default of None reverts to filtering based on 'NN'.
+            min_dist (float): The minimum distance to include. Default of None sets to 0.0 (but to really include onsite terms, 'include_onsite' below must be set to True).
+            NN (int): Alternative/old way to filtering distance terms. Is less robust because requires segmenting NNs.
+                        An integer for which nearest neighbor number to include (eg 1 for 1NN) or None or "All" for all nearest neighbors.
             include_onsite (bool): Includes atomic orbital energy terms (H_ab(R) where R=0 and a=b) instead of just bonding terms.
             spin (int): The spin of the tight binding parameters; default is 0 works for nonspin-polarized.
 
-        Returns:    
+        Returns:
             npt.NDArray: Returns COHP values in a [kpt,band] dimension.
         """
 
-        if type(orbs[0]) is dict:
-            firstorbs = []
-            secorbs = []
-            if type(list(orbs[0].keys())[0]) is str:
-                # format of orbs should be {"Si":["s","p"],"Pb":["s"]}
-                # find orbs for the element
-                for element in orbs[0].keys():
-                    if self.verbose > 1:
-                        print(element)
-                    for orbtype in orbs[0][element]:
-                        for addorb in range(self.num_orbs):
-                            if self.orbatomname[addorb] == element and orbtype in self.exactorbtype[addorb]:
-                                firstorbs.append(addorb)
-
-                for element in orbs[1].keys():
-                    for orbtype in orbs[1][element]:
-                        for addorb in range(self.num_orbs):
-                            if self.orbatomname[addorb] == element and orbtype in self.exactorbtype[addorb]:
-                                secorbs.append(addorb)
-            else: # type is int and should be referring to the specific atom number in prim cell
-                for atm in orbs[0].keys():
-                    if self.verbose > 1:
-                        print(atm)
-                    for orbtype in orbs[0][atm]:
-                        for addorb in range(self.num_orbs):
-                            if self.orbatomnum[addorb] == atm and orbtype in self.exactorbtype[addorb]:
-                                firstorbs.append(addorb)
-
-                for atm in orbs[1].keys():
-                    for orbtype in orbs[1][atm]:
-                        for addorb in range(self.num_orbs):
-                            if self.orbatomnum[addorb] == atm and orbtype in self.exactorbtype[addorb]:
-                                secorbs.append(addorb)
-
-            orbs = [firstorbs, secorbs]
-            if self.verbose > 1:
-                print(orbs)
+        # convert orbital dictionary to orbital indices
+        firstorbs, secorbs = orbs
+        orbs = [COGITO_TB_Model.atmorb_dict_to_ind(self, firstorbs), COGITO_TB_Model.atmorb_dict_to_ind(self, secorbs)]
 
         # reference indices based on the nearest neighbors, much faster and can look at specific NN contributions
-        num_each_dir = self.num_each_dir
-        #if not hasattr(self, 'NN_index'):
-        #    self.get_neighbors()
-        if NN == None or NN == "All":
-            indices = np.array([], dtype=np.int_)
-            for nn in range(len(self.NN_dists)):
-                indices = np.append(indices, self.NN_index[nn])
-            total_index = indices
-            if self.verbose > 0:
-                print("NN distances that are included:", self.NN_dists)
-        else:
-            if int(NN) > len(self.NN_dists):
-                print("give a lower NN integer!")
-            NN_dist = self.NN_dists[int(NN)]
-            total_index = self.NN_index[int(NN)]
-            if self.verbose > 0:
-                print("NN number, distance, count, and indices:", int(NN), NN_dist, len(total_index))  # ,NN_index)
+        full_ind = COGITO_TB_Model.filter_all_indices(self,orbs,max_dist=max_dist,min_dist=min_dist,NN=NN,include_onsite=include_onsite)
 
-        # convert the flattens indices into the full matrix indices
-        full_indices = np.unravel_index(total_index, (
-        self.num_orbs, self.num_orbs, self.num_trans[0], self.num_trans[1], self.num_trans[2]))
-        # only select terms which have the orbitals the user is seeking
-        orb1_in_full = full_indices[0][None, :] == np.array([orbs[0]]).T
-        orb2_in_full = full_indices[1][None, :] == np.array([orbs[1]]).T
-        in_full1 = np.full(len(orb1_in_full[0]), False)
-        in_full2 = np.full(len(orb2_in_full[0]), False)
-        for bool_list in orb1_in_full:
-            in_full1 = in_full1 | bool_list
-        for bool_list in orb2_in_full:
-            in_full2 = in_full2 | bool_list
-        in_full = in_full1 & in_full2
-        # remove onsite terms
-        is_onsite = (full_indices[2] == num_each_dir[0]) & (full_indices[3] == num_each_dir[1]) & (
-                    full_indices[4] == num_each_dir[2]) & (full_indices[0] == full_indices[1])
-        # print(in_full)
-        if not include_onsite:
-            in_full = in_full & np.logical_not(is_onsite)
-        # print(in_full)
-        full_ind = [full_indices[0][in_full], full_indices[1][in_full], full_indices[2][in_full],
-                    full_indices[3][in_full], full_indices[4][in_full]]
-
-        is_onsite = (full_ind[0] == full_ind[1]) & (full_ind[2] == num_each_dir[0]) & (full_ind[3] == num_each_dir[1]) & (
-                    full_ind[4] == num_each_dir[2])
         if self.verbose > 0:
             print("num of params:", len(full_ind[0]))
+
+        if normalize: # then I use the is_onsite variable
+            num_each_dir = self.num_each_dir
+            is_onsite = (full_ind[0] == full_ind[1]) & (full_ind[2] == num_each_dir[0]) & (full_ind[3] == num_each_dir[1]) & (
+                        full_ind[4] == num_each_dir[2])
 
         # generate the hamiltonian matrix for neccessary kpoints
         cohp = np.zeros(self.eigvecs[spin][:, :self.num_orbs, 0].shape, dtype=np.complex128)  # kpts,bands
@@ -1597,14 +1541,18 @@ class COGITO_TB_Model(object):
         return icohp_norm, icohp, icoop
 
     @staticmethod
-    def get_COOP(self: object, orbs: dict, NN: int=None, include_onsite: bool=False,spin: int = 0) -> npt.NDArray:
+    def get_COOP(self: object, orbs: dict, max_dist:float=None, min_dist:float=None, NN: int=None, include_onsite: bool=False,spin: int = 0) -> npt.NDArray:
         """
         Calculates the COOP for the given orbitals and nearest neighbors.
 
         Args:    
             self (object): An object of the class COGITO_BAND or COGITO_UNIFORM.
-            orbs (dict): Either a list of two dictionaries giving elements as keys and orbital types as items (eg [{"Pb":["s","d"],"O":["s","p"]},{"Pb":["s"]"O":["p"]}]) or give list of orb numbers [[1,2,3,5,6,7],[1,2,3,4,5,6,7,8]].
-            NN (int): An integer for which nearest neighbor number to include (eg 1 for 1NN) or None or "All" for all nearest neighbors.
+            orbs (dict): Either a list of two dictionaries giving elements (or site index) as keys and orbital types as items (eg [{"Pb":["s","d"],"O":["s","p"]},{"Pb":["s"]"O":["p"]}])
+            or give list of orb numbers [[1,2,3,5,6,7],[1,2,3,4,5,6,7,8]]. See atmorb_dict_to_ind() for more details.
+            max_dist (float): The maximum distance to include. Default of None reverts to filtering based on 'NN'.
+            min_dist (float): The minimum distance to include. Default of None sets to 0.0 (but to really include onsite terms, 'include_onsite' below must be set to True).
+            NN (int): Alternative/old way to filtering distance terms. Is less robust because requires segmenting NNs.
+                        An integer for which nearest neighbor number to include (eg 1 for 1NN) or None or "All" for all nearest neighbors.
             include_onsite (bool): Includes atomic overlap terms (S_ab(R) where R=0 and a=b) instead of just bonding terms, this can be used with NN=0 to give a projected bandstructure.
             spin (int): The spin of the tight binding parameters; default is 0 works for nonspin-polarized.
 
@@ -1612,82 +1560,15 @@ class COGITO_TB_Model(object):
             npt.NDArray: Returns COOP values in a [kpt,band] dimension.
         """
 
-        if type(orbs[0]) is dict:
-            firstorbs = []
-            secorbs = []
-            if type(list(orbs[0].keys())[0]) is str:
-                # format of orbs should be {"Si":["s","p"],"Pb":["s"]}
-                # find orbs for the element
-                for element in orbs[0].keys():
-                    #print(element)
-                    for orbtype in orbs[0][element]:
-                        for addorb in range(self.num_orbs):
-                            if self.orbatomname[addorb] == element and orbtype in self.exactorbtype[addorb]:
-                                firstorbs.append(addorb)
-
-                for element in orbs[1].keys():
-                    for orbtype in orbs[1][element]:
-                        for addorb in range(self.num_orbs):
-                            if self.orbatomname[addorb] == element and orbtype in self.exactorbtype[addorb]:
-                                secorbs.append(addorb)
-            else:  # type is int and should be referring to the specific atom number in prim cell
-                for atm in orbs[0].keys():
-                    #print(atm)
-                    for orbtype in orbs[0][atm]:
-                        for addorb in range(self.num_orbs):
-                            if self.orbatomnum[addorb] == atm and orbtype in self.exactorbtype[addorb]:
-                                firstorbs.append(addorb)
-
-                for atm in orbs[1].keys():
-                    for orbtype in orbs[1][atm]:
-                        for addorb in range(self.num_orbs):
-                            if self.orbatomnum[addorb] == atm and orbtype in self.exactorbtype[addorb]:
-                                secorbs.append(addorb)
-            orbs = [firstorbs, secorbs]
-            #print(orbs)
+        # convert orbital dictionary to orbital indices
+        firstorbs, secorbs = orbs
+        orbs = [COGITO_TB_Model.atmorb_dict_to_ind(self,firstorbs), COGITO_TB_Model.atmorb_dict_to_ind(self,secorbs)]
 
         # reference indices based on the nearest neighbors, much faster and can look at specific NN contributions
-        num_each_dir = self.num_each_dir
-        #if not hasattr(self, 'NN_index'):
-        #    self.get_neighbors()
-        if NN == None or NN == "All":
-            indices = np.array([], dtype=np.int_)
-            for nn in range(len(self.NN_dists)):
-                indices = np.append(indices, self.NN_index[nn])
-            total_index = indices
-            if self.verbose > 0:
-                print("NN distances that are included:", self.NN_dists)
-        else:
-            if int(NN) > len(self.NN_dists):
-                print("give a lower NN integer!")
-            NN_dist = self.NN_dists[int(NN)]
-            total_index = self.NN_index[int(NN)]
-            if self.verbose > 0:
-                print("NN number, distance, count, and indices:", int(NN), NN_dist, len(total_index))  # ,NN_index)
+        full_ind = COGITO_TB_Model.filter_all_indices(self,orbs,max_dist=max_dist,min_dist=min_dist,NN=NN,include_onsite=include_onsite)
 
-        # convert the flattens indices into the full matrix indices
-        full_indices = np.unravel_index(total_index, (
-        self.num_orbs, self.num_orbs, self.num_trans[0], self.num_trans[1], self.num_trans[2]))
-        # only select terms which have the orbitals the user is seeking
-        orb1_in_full = full_indices[0][None, :] == np.array([orbs[0]]).T
-        orb2_in_full = full_indices[1][None, :] == np.array([orbs[1]]).T
-        in_full1 = np.full(len(orb1_in_full[0]), False)
-        in_full2 = np.full(len(orb2_in_full[0]), False)
-        for bool_list in orb1_in_full:
-            in_full1 = in_full1 | bool_list
-        for bool_list in orb2_in_full:
-            in_full2 = in_full2 | bool_list
-        in_full = in_full1 & in_full2
-        # remove onsite terms
-        is_onsite = (full_indices[2] == num_each_dir[0]) & (full_indices[3] == num_each_dir[1]) & (
-                    full_indices[4] == num_each_dir[2]) & (full_indices[0] == full_indices[1])
-        # print(in_full)
-        if include_onsite == False:
-            in_full = in_full & np.logical_not(is_onsite)
-        # print(in_full)
-        full_ind = [full_indices[0][in_full], full_indices[1][in_full], full_indices[2][in_full],
-                    full_indices[3][in_full], full_indices[4][in_full]]
-        #print("num of params:", len(full_ind[0]))
+        if self.verbose > 0:
+            print("num of params:", len(full_ind[0]))
 
         # generate the hamiltonian matrix for neccessary kpoints
         coop = np.zeros(self.eigvecs[spin][:, :, 0].shape, dtype=np.complex128)  # kpts,bands
@@ -1834,14 +1715,164 @@ class COGITO_TB_Model(object):
             bond_occup += energyCont * self.kpt_weights[kind] #np.sum(,axis=(0))  #[orb1,orb2,tran1,tran2,tran3]
         return bond_occup
 
+    @staticmethod
+    def get_orbprojs(self, spin: int = 0, mulliken:bool=True) -> npt.NDArray:
+        """
+        Returns the orbital projections on the kpoints and band of self object. Output shape is [nkpts, nbands, norbs].
+        """
+        orb_proj_kpt = np.zeros((self.num_kpts,self.num_orbs, self.num_orbs))  # kpts,bands, orbs
+
+        for kind in range(self.num_kpts):
+            coeff = self.eigvecs[spin][kind, :self.num_orbs].T  # [band, orb]
+
+            if mulliken:
+                ae_overlap = self.Sij[spin][kind] # already summed over T123
+                orb_proj_kpt[kind] = (np.conj(coeff) * np.matmul(ae_overlap, coeff.T).T).real * self.kpt_weights[kind] #[band,orb]
+            else:
+                onsite_overlap = np.diag(self.overlaps_params[spin][:,:,self.num_each_dir[0],self.num_each_dir[1],self.num_each_dir[2]]) # should just be ones
+                orb_proj_kpt[kind] = (np.conj(coeff) * onsite_overlap[None,:] * coeff).real * self.kpt_weights[kind] #[band,orb]
+
+        return orb_proj_kpt
+
+    @staticmethod
+    def atmorb_dict_to_ind(self,orbdict):
+        """
+        This function converts an element+orbtype dictionary into the related orbital indices.
+        If
+        Args:
+            self: COGITO_TB_Model (or derivative) class
+            curorbdict (dict/list): Either a dict giving elements as keys and orbital types as items (eg {"Pb":["s","d"],"O":["s","p"]})
+                                    or already the list of orbital indices. You can also use site/atom index (int) instead
+                                    of a element (str) as the dict key to single out specific atoms.
+                                    Specific orbital types (e.g. 'px' or 'dxy') will not work. This is because the invariance
+                                    implemented in COGITO uses the local environment to define the angular part of each orbital
+                                    as a linear combination of all 2l+1 spherical harmonics as defined by self.orb_vec and in the
+                                    "orbital spherical harmonics combo" section of tb_input.txt.
+
+        Returns:
+            List of orbital indices for the given dict.
+        """
+
+        # find the orbitals of this dict
+        if type(orbdict) is dict:
+            orb_inds = []
+            if type(list(orbdict.keys())[0]) is str:
+                # format of orbs should be {"Si":["s","p"],"Pb":["s"]}
+                # find orbs for the element
+                for element in orbdict.keys():
+                    # print(element)
+                    for orbtype in orbdict[element]:
+                        for addorb in range(self.num_orbs):
+                            if self.orbatomname[addorb] == element and orbtype in self.exactorbtype[addorb]:
+                                orb_inds.append(addorb)
+
+            else:  # type is int and should be referring to the specific atom number in prim cell
+                for atm in orbdict.keys():
+                    # print(atm)
+                    for orbtype in orbdict[atm]:
+                        for addorb in range(self.num_orbs):
+                            if self.orbatomnum[addorb] == atm and orbtype in self.exactorbtype[addorb]:
+                                orb_inds.append(addorb)
+        else:  # assume it is the list of orbital indices
+            orb_inds = orbdict
+
+        return orb_inds
+
+    @staticmethod
+    def filter_all_indices(self,orbs: list, max_dist:float=None, min_dist:float=None, NN: int=None, include_onsite: bool=False):
+        """
+        Filter the total 5D (norb, norb, nT1, nT2, nT3) interactions down. Doing this makes calculating COHP and other matrices much faster.
+        Args:
+            self (obj): COGITO_TB_Model class
+            orbs (list): List of two lists of orb numbers, e.g. [[1,2,3,5,6,7],[1,2,3,4,5,6,7,8]]. Cannot be dictionary.
+            max_dist (float): The maximum distance to include. Default of None reverts to filtering based on 'NN'.
+            min_dist (float): The minimum distance to include. Default of None sets to 0.0 (but to really include onsite terms, 'include_onsite' below must be set to True).
+            NN (int): Alternative/old way to filtering distance terms. Is less robust because requires segmenting NNs.
+                        An integer for which nearest neighbor number to include (eg 1 for 1NN) or None or "All" for all nearest neighbors.
+            include_onsite (bool): Includes atomic orbital energy terms (H_ab(R) where R=0 and a=b) instead of just bonding terms.
+
+        Returns:
+            int ND.Array of shape [5, N] where N is the number of interactions that fit the parameters given. The 5 gives the [orb1, orb2, T1, T2, T3] of each interaction.
+
+        """
+
+        # filter based on distance
+        # reference indices based on the nearest neighbors, much faster and can look at specific NN contributions
+        #if not hasattr(self, 'NN_index'):
+        #    self.get_neighbors()
+        if max_dist == None and min_dist == None: # just use the previous NN scheme
+            if NN == None or NN == "All":
+                indices = np.array([], dtype=np.int_)
+                for nn in range(len(self.NN_dists)):
+                    indices = np.append(indices, self.NN_index[nn])
+                total_index = indices
+                if self.verbose > 0:
+                    print("NN distances that are included:", self.NN_dists)
+            else:
+                if int(NN) > len(self.NN_dists):
+                    print("give a lower NN integer!")
+                NN_dist = self.NN_dists[int(NN)]
+                total_index = self.NN_index[int(NN)]
+                if self.verbose > 0:
+                    print("NN number, distance, count, and indices:", int(NN), NN_dist, len(total_index))  # ,NN_index)
+        else:
+            if min_dist == None:
+                # includes onsite terms intially but will be screened according to include_onsite
+                min_dist = 0.0
+            if max_dist == None:
+                # includes onsite terms intially but will be screened according to include_onsite
+                max_dist = 10.0
+
+            dist_to_orbs = self.dist_to_orbs
+            all_inds = np.arange(len(dist_to_orbs))
+            total_index = all_inds[(dist_to_orbs >= min_dist) & (dist_to_orbs <= max_dist)]
+
+
+        # convert the flattens indices into the full matrix indices
+        full_indices = np.unravel_index(total_index, (self.num_orbs, self.num_orbs, self.num_trans[0],
+                                                      self.num_trans[1], self.num_trans[2]))
+
+        # now filter based on orbital
+        # only select terms which have the orbitals the user is seeking
+        orb1_in_full = full_indices[0][None, :] == np.array([orbs[0]]).T
+        orb2_in_full = full_indices[1][None, :] == np.array([orbs[1]]).T
+        in_full1 = np.full(len(orb1_in_full[0]), False)
+        in_full2 = np.full(len(orb2_in_full[0]), False)
+        for bool_list in orb1_in_full:
+            in_full1 = in_full1 | bool_list
+        for bool_list in orb2_in_full:
+            in_full2 = in_full2 | bool_list
+        in_full = in_full1 & in_full2
+
+        # remove onsite terms
+        num_each_dir = self.num_each_dir
+        is_onsite = (full_indices[2] == num_each_dir[0]) & (full_indices[3] == num_each_dir[1]) & (
+                    full_indices[4] == num_each_dir[2]) & (full_indices[0] == full_indices[1])
+        # print(in_full)
+        if not include_onsite:
+            in_full = in_full & np.logical_not(is_onsite)
+        # print(in_full)
+        full_ind = [full_indices[0][in_full], full_indices[1][in_full], full_indices[2][in_full],
+                    full_indices[3][in_full], full_indices[4][in_full]]
+
+        return full_ind
+
+
 
 class COGITO_BAND(object): # ought to pass the class COGITO_TB_Model
-    def __init__(self,TB_model: object, num_kpts: int=100):
+    def __init__(self,TB_model: object, line_density: int=20, high_sym_kpnts:dict = {}, high_sym_kpath:list=[], all_kpts:list=[],kpt_labels: list=[]):
         """
         This class deals with all post-processing band structure analysis.
 
         Args:    
             TB_model (object): Requires an object of the class COGITO_TB_Model.
+            line_density (int): Density of kpoints per line.
+            high_sym_kpnts (dict): Dictionary of high symmetry points in reduced coordinates. e.g. {'GAMMA': [0.0, 0.0, 0.0], 'Z': [0.0, 0.0, 0.5], 'M': [0.5, 0.5, 0.0]}
+                                If not provided, use KpathSeek to find using structure.
+            high_sym_kpath (list): The list of paths between the high symmetry points. e.g. [['GAMMA', 'X', 'M', 'GAMMA']]
+                                If this and high_sym_pnts not provide, use KpathSeek. If just this not provided, defaults to single path through points in order provided.
+            all_kpts (list): List of all k-point coordinates in reduced coordinates. If not provided, uses high_sym_kpnts/kpath and pymatgen Kpath.
+            kpt_labels (list): Labels for the full list of k-points. Only used if all_kpts is provided. Default is empty string array.
         """
         # copy all attributes of the TB_model
         attributes = vars(TB_model)
@@ -1851,33 +1882,53 @@ class COGITO_BAND(object): # ought to pass the class COGITO_TB_Model
         self.TB_model = TB_model
         #print("is polarized?",self.spin_polar)
         # calculate the bandstructure
-        self.get_bandstructure(num_kpts)
+        self.get_bandstructure(line_density=line_density,high_sym_kpnts=high_sym_kpnts,high_sym_kpath=high_sym_kpath,
+                               all_kpts=all_kpts,kpt_labels=kpt_labels)
         self.NN_index, self.NN_dists = self.TB_model.get_neighbors(self)
 
-    def get_bandstructure(self, num_kpts: int = 100) -> None:
+    def get_bandstructure(self, line_density: int = 20, high_sym_kpnts:dict = {}, high_sym_kpath:list=[], all_kpts:list=[[]],kpt_labels: list=[]) -> None:
         """
         The function automatically generates a kpath using pymatgen and kpathseek.
         Then calculates the band energies and vectors for the kpath.
 
         Args:    
-            num_kpts (int): The number of kpoints between EACH kpath.
+            line_density (int): The number of kpoints between EACH kpath.
+            high_sym_kpnts (dict): Dictionary of high symmetry points in reduced coordinates. e.g. {'GAMMA': [0.0, 0.0, 0.0], 'Z': [0.0, 0.0, 0.5], 'M': [0.5, 0.5, 0.0]}
+                                If not provided, use KpathSeek to find using structure.
+            high_sym_kpath (list): The list of paths between the high symmetry points. e.g. [['GAMMA', 'X', 'M', 'GAMMA']]
+                                If this and high_sym_pnts not provide, use KpathSeek. If just this not provided, defaults to single path through points in order provided.
+            all_kpts (list): List of all k-points in reduced coordinates. If not provided, uses high_sym_kpnts/kpath and pymatgen Kpath.
+            kpt_labels (list): Labels for the full list of k-points. Only used if all_kpts is provided. Default is empty string array.
 
         Returns:    
             None: Nothing
         """
 
-        pymat_struc = struc.Structure(self._a, self.elements, self.primAtoms)
-        print(pymat_struc)
-        kpts_obj = kpath.KPathSeek(pymat_struc)
-        high_sym = kpts_obj.get_kpoints(1, coords_are_cartesian=False)
+        if len(all_kpts)==0:
+            if high_sym_kpnts=={}:
+                pymat_struc = struc.Structure(self._a, self.elements, self.primAtoms)
+                kpts_obj = kpath.KPathSeek(pymat_struc)
+            else:
+                pymat_struc = struc.Structure(self._a, self.elements, self.primAtoms)
+                kpts_obj = kpath.KPathSetyawanCurtarolo(pymat_struc)
+                if high_sym_kpath == []: # set default path
+                    kpts_obj._kpath = {'kpoints':high_sym_kpnts,'path':[list(high_sym_kpnts.keys())]}
+                else:
+                    kpts_obj._kpath = {'kpoints':high_sym_kpnts,'path':high_sym_kpath}
 
-        num_each = int(num_kpts / (len(high_sym) / 2))
-        print("num kpts per path:", num_each)
-        kpoints = kpts_obj.get_kpoints(num_each, coords_are_cartesian=False)
-        self.num_kpts = len(kpoints[0])
-        print(self.num_kpts)
-        self.kpoints = np.array(kpoints[0])
-        self.kpoint_labels = np.array(kpoints[1])
+            print("Your k-path!", kpts_obj._kpath)
+            kpoints = kpts_obj.get_kpoints(line_density, coords_are_cartesian=False)
+            self.num_kpts = len(kpoints[0])
+            print(self.num_kpts)
+            self.kpoints = np.array(kpoints[0])
+            self.kpoint_labels = np.array(kpoints[1])
+        else:
+            self.kpoints = all_kpts
+            self.num_kpts = len(all_kpts)
+            print(self.num_kpts)
+            if kpt_labels == []: # set empty '' labels
+                kpt_labels = np.full(len(all_kpts),'')
+            self.kpoint_labels = kpt_labels
 
         if self.spin_polar:
             keys = [0,1]
@@ -1887,6 +1938,7 @@ class COGITO_BAND(object): # ought to pass the class COGITO_TB_Model
 
         eigvals = np.zeros((len(keys), self.num_kpts, self.num_orbs))
         eigvecs = np.zeros((len(keys), self.num_kpts, self.num_orbs, self.num_orbs), dtype=np.complex128)
+        kdep_Sij = np.zeros((len(keys), self.num_kpts, self.num_orbs, self.num_orbs), dtype=np.complex128)
 
         for key in keys:
             for kpt in range(self.num_kpts):
@@ -1894,12 +1946,14 @@ class COGITO_BAND(object): # ought to pass the class COGITO_TB_Model
             print("")
             for kpt in range(self.num_kpts):
                 print("-", end="")
-                eigvals[key][kpt], eigvecs[key][kpt] = self.TB_model.get_ham(self, self.kpoints[kpt], return_truevec=True,spin=key)
+                eigvals[key][kpt], eigvecs[key][kpt],kdep_Sij[key][kpt] = self.TB_model.get_ham(self, self.kpoints[kpt], return_truevec=True,spin=key,return_overlap=True)
             print("")
         self.eigvals = eigvals
         self.eigvecs = eigvecs
+        self.Sij = kdep_Sij
         self.kpt_weights = np.ones(self.num_kpts)
 
+    @staticmethod
     def plotBS(self, ax: object=None, ylim: list = (-10, 10), color_label: str = "", colors: npt.NDArray = np.array([]), colorhalf: float = 10) -> object:
         """
 
@@ -1929,7 +1983,9 @@ class COGITO_BAND(object): # ought to pass the class COGITO_TB_Model
                     labels.append(name + "|" + next_label)
                 kpt_line[kpt_ind + 2:] = kpt_line[kpt_ind + 2:] - 1
                 num_nodes += 1
-
+        num_nodes += 1
+        nodes.append(len(self.kpoint_labels)-num_nodes + 1)
+        labels.append(self.kpoint_labels[-1])
         # initialize figure and axis
         fig = plt.figure()
         if ax == None:
@@ -1986,6 +2042,7 @@ class COGITO_BAND(object): # ought to pass the class COGITO_TB_Model
         plt.close()
         return ax
 
+    @staticmethod
     def plotlyBS(self,ylim=(-10,10),color_label="",colors=None,colorhalf=None, orbProj: bool=False) -> object:
         """
         Plots bandstructure (or projected bandstructure) using plotly graph_objects.
@@ -1993,7 +2050,7 @@ class COGITO_BAND(object): # ought to pass the class COGITO_TB_Model
         Args:    
             ylim (unknown): Limits on the y-axis of plot.
             color_label (unknown): When being plotted from another function, this passes "COHP" or "COOP".
-            colors (unknown): Magnitude for each point to use in color plotting, passed by get_COHP() function.
+            colors (unknown): Magnitude for each point to use in color plotting, passed by plot_COHP() function.
             colorhalf (unknown): Sets scale of color bar.
 
         Returns:    
@@ -2090,68 +2147,128 @@ class COGITO_BAND(object): # ought to pass the class COGITO_TB_Model
 
         return bs_figure
 
-    def get_COHP(self, orbs: dict, NN: int = None, ylim: list = (-10, 10), colorhalf: float = 10, include_onsite: bool = False,from_dash: bool=False) -> None:
+    @staticmethod
+    def plot_COHP(self, orbs: dict, max_dist:float=None, min_dist:float=None, NN: int = None, ylim: list = (-10, 10), colorhalf: float = 10, include_onsite: bool = False,return_plot: bool=False) -> None:
         """
         Calculates and plots the projected COHP values for each band and k-point on band structure.
 
         Args:    
-            orbs (dict): Either a list of two dictionaries giving elements as keys and orbital types as items (eg [{"Pb":["s","d"],"O":["s","p"]},{"Pb":["s"]"O":["p"]}]) or give list of orb numbers [[1,2,3,5,6,7],[1,2,3,4,5,6,7,8]].
-            NN (int): An integer for which nearest neighbor number to include (eg 1 for 1NN) or None or "All" for all nearest neighbors.
+            orbs (dict): Either a list of two dictionaries giving elements as keys and orbital types as items (eg [{"Pb":["s","d"],"O":["s","p"]},{"Pb":["s"]"O":["p"]}])
+                        or give list of orb numbers [[1,2,3,5,6,7],[1,2,3,4,5,6,7,8]].See atmorb_dict_to_ind() for more details.
+            max_dist (float): The maximum distance to include. Default of None reverts to filtering based on 'NN'.
+            min_dist (float): The minimum distance to include. Default of None sets to 0.0 (but to really include onsite terms, 'include_onsite' below must be set to True).
+            NN (int): Alternative/old way to filtering distance terms. Is less robust because requires segmenting NNs.
+                        An integer for which nearest neighbor number to include (eg 1 for 1NN) or None or "All" for all nearest neighbors.
             ylim (list): The limits of the y-axis (energy) of the band structure plot.
             colorhalf (float): Set the magnitude for the color bar; For default value of 10, it is set automatically to average(COHP)*3.
             include_onsite (bool): Includes atomic orbital energy terms (H_ab(R) where R=0 and a=b) instead of just bonding terms.
-            from_dash (bool): Flag to set when calling from the dash app, sets plotting backend to plotly and returns the axis.
+            return_plot (bool): Flag to set when calling from the dash app, sets plotting backend to plotly and returns the axis.
 
         Returns:    
-            None: Nothing
+            None: Nothing or plotly figure, depending no return_plot.
         """
-        self.NN_index, self.NN_dists = self.TB_model.get_neighbors(self)
+        #self.NN_index, self.NN_dists = self.TB_model.get_neighbors(self)
         cohp = {}
         for key in self.keys: # plot bands for each spin
-            cohp[key] = self.TB_model.get_COHP(self, orbs, NN=NN, include_onsite=include_onsite, spin = key)
+            cohp[key] = self.TB_model.get_COHP(self, orbs,max_dist=max_dist,min_dist=min_dist, NN=NN, include_onsite=include_onsite, spin = key)
 
-        if from_dash == True:
-            return self.plotlyBS(color_label="COHP", colors=cohp, colorhalf=colorhalf, ylim = ylim)
+        if return_plot == True:
+            return self.plotlyBS(self,color_label="COHP", colors=cohp, colorhalf=colorhalf, ylim = ylim)
         else:
-            fig = self.plotlyBS(color_label="COHP", colors=cohp, colorhalf=colorhalf, ylim = ylim)
-            #self.plotBS(color_label="COHP", colors=cohp, colorhalf=colorhalf, ylim=ylim)
+            fig = self.plotlyBS(self,color_label="COHP", colors=cohp, colorhalf=colorhalf, ylim = ylim)
+            #self.plotBS(self,color_label="COHP", colors=cohp, colorhalf=colorhalf, ylim=ylim)
             atms1 = ''.join(list(orbs[0].keys()))
             atms2 = ''.join(list(orbs[1].keys()))
             fig.write_html(self.directory+"COHP_BS"+atms1+"-"+atms2+".html")
 
-    def get_COOP(self, orbs: dict, NN: int = None, ylim: list = (-10, 10), colorhalf: float = 10, include_onsite: bool = False,from_dash=False, color_label: str = "COOP", orbProj: bool = False) -> None:
+    @staticmethod
+    def plot_COOP(self, orbs: dict, max_dist:float=None, min_dist:float=None, NN: int = None, ylim: list = (-10, 10), colorhalf: float = 10, include_onsite: bool = False,return_plot=False, color_label: str = "-COOP", orbProj: bool = False) -> None:
         """
         Calculates and plots the projected COOP values for each band and k-point on band structure.
 
         Args:    
-            orbs (dict): either a list of two dictionaries giving elements as keys and orbital types as items (eg [{"Pb":["s","d"],"O":["s","p"]},{"Pb":["s"]"O":["p"]}]) or give list of orb numbers [[1,2,3,5,6,7],[1,2,3,4,5,6,7,8]].
-            NN (int): An integer for which nearest neighbor number to include (eg 1 for 1NN) or None or "All" for all nearest neighbors.
+            orbs (dict): either a list of two dictionaries giving elements as keys and orbital types as items (eg [{"Pb":["s","d"],"O":["s","p"]},{"Pb":["s"]"O":["p"]}])
+            or give list of orb numbers [[1,2,3,5,6,7],[1,2,3,4,5,6,7,8]].See atmorb_dict_to_ind() for more details.
+            max_dist (float): The maximum distance to include. Default of None reverts to filtering based on 'NN'.
+            min_dist (float): The minimum distance to include. Default of None sets to 0.0 (but to really include onsite terms, 'include_onsite' below must be set to True).
+            NN (int): Alternative/old way to filtering distance terms. Is less robust because requires segmenting NNs.
+                        An integer for which nearest neighbor number to include (eg 1 for 1NN) or None or "All" for all nearest neighbors.
             ylim (list): The limits of the y-axis (energy) of the band structure plot.
             colorhalf (float): Set the magnitude for the color bar; For default value of 10, it is set automatically to average(COOP)*3.
             include_onsite (bool): Includes atomic overlap terms (S_ab(R) where R=0 and a=b) instead of just bonding terms, this can be used with NN=0 to give a projected bandstructure.
-            from_dash (unknown): Flag to set when calling from the dash app, sets plotting backend to plotly and returns the axis.
+            return_plot (unknown): Flag to set when calling from the dash app, sets plotting backend to plotly and returns the axis.
 
         Returns:    
-            None: Nothing
+            None: Nothing or plotly figure, depending no return_plot.
         """
-        self.NN_index, self.NN_dists = self.TB_model.get_neighbors(self)
+        #self.NN_index, self.NN_dists = self.TB_model.get_neighbors(self)
         coop = {}
         for key in self.keys: # plot bands for each spin
-            coop[key] = self.TB_model.get_COOP(self, orbs, NN=NN, include_onsite=include_onsite, spin = key)
+            coop[key] = - self.TB_model.get_COOP(self, orbs,max_dist=max_dist,min_dist=min_dist, NN=NN, include_onsite=include_onsite, spin = key)
 
-        if from_dash == True:
-            return self.plotlyBS(color_label=color_label, colors=coop, colorhalf=colorhalf, ylim = ylim, orbProj = orbProj)
+        if return_plot == True:
+            return self.plotlyBS(self,color_label=color_label, colors=coop, colorhalf=colorhalf, ylim = ylim, orbProj = orbProj)
         else:
-            fig = self.plotlyBS(color_label=color_label, colors=coop, colorhalf=colorhalf, ylim = ylim, orbProj = orbProj)
-            #self.plotBS(color_label="COOP", colors=coop, colorhalf=colorhalf, ylim=ylim))
+            fig = self.plotlyBS(self,color_label=color_label, colors=coop, colorhalf=colorhalf, ylim = ylim, orbProj = orbProj)
+            #self.plotBS(self,color_label="COOP", colors=coop, colorhalf=colorhalf, ylim=ylim))
 
             fig.write_html(self.directory+"COOP_BS.html")
 
-    def get_projectedBS(self,orbdict : dict, ylim: list = (-10, 10), colorhalf: float = 10) -> None:
+    @staticmethod
+    def get_pymatgen_bandstruc(self, mulliken: bool=True):
+        """
+        This function will generate a pymatgen bandstructure class object that is projected with the COGITO orbitals.
+        Args:
+            self: COGITO_BAND object
+            mulliken: Whether to do mulliken projection or onsite projection. For nonorthogonal basis, the sum of the onsite projection
+                        is <1 for bonding states and >1 (often by 2-5x) for antibonding states.
+
+        Returns: pymatgen BandStructureSymmLine object
+        """
+
+        from pymatgen.electronic_structure.core import Spin
+
+        projections = {}
+        pymat_projs = {}
+        eigenvals = {}
+        temp_pyproj = np.zeros((self.num_orbs,self.num_kpts,16,self.numAtoms))
+        for key in self.keys: # plot bands for each spin
+            projections[key] = self.TB_model.get_orbprojs(self, spin = key) #[kpt,band,orb]
+
+            # rearrange projections to have shape (band_index, kpoint_index, orbital_index, ion_index) where orbital index is same as sph_harm_key
+            first_temp = np.transpose(projections[key], (1, 0, 2)) #[band,kpt,orb]
+            temp_pyproj[:,:,self.sph_harm_key, self.orbatomnum] = first_temp #[kpt, band, orbperatm, atm]
+            if key == 0 or key =='0':
+                pymat_projs[Spin.up] = temp_pyproj
+                eigenvals[Spin.up] = self.eigvals[key].T
+            else:
+                pymat_projs[Spin.down] = temp_pyproj
+                eigenvals[Spin.down] = self.eigvals[key].T
+
+        from pymatgen.core.lattice  import Lattice
+        recip_lat = Lattice(self._b)
+        from pymatgen.core.structure import Structure
+        struc = Structure(self._a, self.elements, self.primAtoms)
+        kpt_labels = {}
+        for kpt in range(self.num_kpts):
+            kpt_labels[self.kpoint_labels[kpt]] = self.kpoints[kpt]
+
+        from pymatgen.electronic_structure.bandstructure  import BandStructureSymmLine
+        cogito_proj_bs = BandStructureSymmLine(kpoints=self.kpoints,eigenvals = eigenvals,lattice=recip_lat,
+                                       efermi=(self.efermi+self.energy_shift),labels_dict=kpt_labels,
+                                       structure=struc,projections=pymat_projs)
+        return cogito_proj_bs
+
+    @staticmethod
+    def plot_projectedBS(self,orbdict : dict, ylim: list = (-10, 10), colorhalf: float = 10, mulliken: bool=True) -> None:
         """
         Returns the COGITO-orbital projected band structure. By construction, this performs the projection by Mulliken-style analysis. 
-        Projection without Mulliken is obfuscated by the nonorthogonal nature of the orbitals, which causes much larger projection at high energy states due to antibonding. 
-        
+        Projection without Mulliken is obfuscated by the nonorthogonal nature of the orbitals, which causes much larger projection at high energy states due to antibonding.
+
+        This function is mostly useful just for plotting orbital projected BS.
+        If you only need the raw projected values for specific atoms and orbitals (defined in orbdict), use the indices
+        returned by COGITO_TB_Model.atmorb_dict_to_ind(my_TB/UN/BS class, {"Si":["s","p"]}) on the projections returned by COGITO_TB_Model.get_orbprojs(my_UN/BS class, spin=0) (where spin is a 0 or 1 int).
+
         Args:    
             orbdict (dict): Single dictionary of orbitals to include in projection. For example, {"Pb":["s","d"],"O":["s","p"]}.
             ylim (tuple): The y-axis limits.
@@ -2172,9 +2289,17 @@ class COGITO_BAND(object): # ought to pass the class COGITO_TB_Model
             for orb in orbs:
                 all_orb = all_orb+orb
             full_label = full_label+" "+elem+"("+all_orb+")"
-        fig = self.get_COOP([orbdict,allorbs], include_onsite=True,from_dash=True,color_label=full_label, orbProj=True,ylim=ylim)
+
+        orb_inds = COGITO_TB_Model.atmorb_dict_to_ind(self, orbdict)
+        dict_projs = {}
+        for key in self.keys:
+            all_projs = self.TB_model.get_orbprojs(self, spin=key,mulliken=mulliken)
+            dict_projs[key] =  np.sum(all_projs[:,:,orb_inds],axis=2)
+
+        fig = self.plotlyBS(self,color_label=full_label, colors=dict_projs, colorhalf=colorhalf, ylim = ylim, orbProj = True)
         fig.write_html(self.directory+"projectedBS"+full_label+".html")
 
+    @staticmethod
     def make_COHP_dashapp(self,pathname: str = "/COGITO_COHP/") -> None:
         """
         This function generate a dash app which allows the user to interactively select orbitals and nearest neighbors
@@ -2269,7 +2394,7 @@ class COGITO_BAND(object): # ought to pass the class COGITO_TB_Model
         )
         def print_selected_items(n_clicks, stored_data,NN):
             print("orb for COHP",stored_data)
-            fig = self.get_COHP(orbs=stored_data,colorhalf=10,NN=NN,from_dash=True)
+            fig = self.plot_COHP(self,orbs=stored_data,colorhalf=10,NN=NN,return_plot=True)
             return fig
 
         # Run the app
@@ -2320,6 +2445,7 @@ class COGITO_UNIFORM(object):
         self.num_kpts = num_kpts
         self.kpoints = kptvecs
         self.kpt_weights = np.ones(num_kpts)/num_kpts
+        self.kpt_grid = grid
 
         if self.spin_polar:
             keys = [0,1]
@@ -2365,171 +2491,6 @@ class COGITO_UNIFORM(object):
         tot_band_energy = np.sum(all_eigvals[all_eigvals <= (self.efermi+self.energy_shift)] * 2 / len(self.keys))/num_kpts
         print("band energy:", tot_band_energy)
 
-    def get_occupation(self, spin: int = 0):
-        """
-        This function prints information about electron occupation/partitioning. It prints a version using Mulliken to
-        assign charge to orbitals and one that just uses the onsite orbital terms. The onsite one will not be charge balanced as some charge is in bonds.
-        It also prints the atomic partial charge by Mulliken population.
-        """
-        # now get and partition the electron charge to atoms or atoms and bond centers
-        #def get_partial_charge(self):
-        N_i = np.zeros(self.num_orbs)
-        mnk2 = np.transpose(self.eigvecs[spin],axes=(0,2,1)) #[kpt,band,orb]
-        cj = mnk2[:, :, None, :]  # self.mnkcoefficients[:,:,None,:]
-        ci2 = np.conj(mnk2[:, :, :, None])  # self.mnkcoefficients[:,:,:,None])
-        Sij = self.Sij[spin][:, None, :, :]
-
-        fnk = np.zeros((self.num_kpts, self.num_orbs), dtype=np.float64)
-        sum_n = np.zeros((self.num_orbs,self.num_orbs), dtype=np.complex128)
-        for k in range(self.num_kpts):
-            for i in range(self.num_orbs):
-                if self.eigvals[spin][k, i] <= (self.efermi+self.energy_shift):
-                    fnk[k, i] = 1
-                    sum_n += np.conj(mnk2[k, i, :, None])*mnk2[k, i, None, :] * self.Sij[spin][k, :, :] / self.num_kpts
-                elif self.eigvals[spin][k, i] > (self.efermi+self.energy_shift):
-                    fnk[k, i] = 0
-
-        #new_fnk = fnk[:, :, None, None]
-
-        #Ni_value = ci2 * cj * new_fnk * Sij / self.num_kpts
-        #sum_k = np.sum(Ni_value, axis=0)
-        #sum_n = np.sum(sum_k, axis=0)
-        sum_j = np.sum(sum_n, axis=0)
-        N_i = sum_j
-        realN_i = np.real(N_i)
-        #print('realNi: ', realN_i)
-        sum_Ni = np.sum(realN_i)
-        #print('sum: ', sum_Ni)
-
-        # get just the atomic portion (no charge from the overlap density)
-        diag_Sij = self.Sij[spin].diagonal(0,1,2) # [kpt,orb]
-        #print("diag Sij:",diag_Sij)
-        ci_2 = np.conj(mnk2)*mnk2 #[kpt,band,orb]
-        get_atomic_Ni = ci_2*diag_Sij[:,None,:]*fnk[:,:,None] / self.num_kpts
-        sum_k = np.sum(get_atomic_Ni, axis=0)
-        atomic_Ni = np.sum(sum_k, axis=0).real
-        #print("atomic Ni:",atomic_Ni)
-
-        # output charge on each atom
-        # write num protons into tb_input.txt
-        N_e = []
-        for each_atom in range(max(self.orbatomnum) + 1):
-            num_e_each = 0  # starts at 0, resets for every atom
-            for i in range(len(self.orbatomnum)):
-                if self.orbatomnum[i] == each_atom:
-                    num_e_each = realN_i[i] + num_e_each
-            N_e.append(num_e_each)
-
-        #print("num_pro: ", self.num_pro)
-        #print('unique elements: ', self.unique_elems)
-
-        #N_p = np.zeros(len(self.elements))
-        # print('beginingn Ne array: ', N_p_current)
-        #for i in range(len(self.elements)):
-        #    one_atom = self.elements[i]
-        #    # print(one_atom)
-        #    ind = np.where(np.array(self.unique_elems) == one_atom)[0][0]
-        #    # print(ind)
-        #    N_p[i] = self.num_pro[ind]
-        #print('corrected Np array based on atoms in the system:', N_p)
-
-        # num_e_each = 2 * num_e_each # multiply by 2, since Ni doesn't account for degeneracy
-        N_e = np.array(N_e) * 2
-        print("")
-        print("Where are the electrons?")
-        print('orbital + overlap occupation:', realN_i*2)
-        print('sum: ', sum_Ni*2)
-        print("orbital occupation without bonds:",atomic_Ni*2)
-        print('The electron occupation for the atoms ', self.elements, ' is ', N_e)
-
-        #oxid_state = N_p - N_e
-        #print('the oxidation state for the atoms ', self.elements, ' is ', oxid_state)
-
-    def get_COHP(self, orbs: dict, NN: int = None, ylim: list = (-10, 10),sigma=0.1, include_onsite: bool = False):
-        """
-        Calculates and plots the projected COHP values on the density of states.
-
-        Args:
-            orbs (dict): Either a list of two dictionaries giving elements as keys and orbital types as items (eg [{"Pb":["s","d"],"O":["s","p"]},{"Pb":["s"]"O":["p"]}]) or give list of orb numbers [[1,2,3,5,6,7],[1,2,3,4,5,6,7,8]].
-            NN (int): An integer for which nearest neighbor number to include (eg 1 for 1NN) or None or "All" for all nearest neighbors.
-            ylim (list): The limits of the y-axis (energy) of the DOS plot.
-            sigma (float): Sets the spread (in energy) of the gaussian for the each wavefunction COHP. The full pCOHP is created by summing the gaussians.
-                        This should trade off with k-point resolution. Low resolution requires high sigma (0.2) to smear between points. High resoltion can have low sigma (0.02).
-            include_onsite (bool): Includes atomic orbital energy terms (H_ab(R) where R=0 and a=b) instead of just bonding terms.
-
-        Returns:
-            png: Saves projected COHP DOS to self.directory+'COHP_DOS.png'.
-        """
-        self.NN_index, self.NN_dists = self.TB_model.get_neighbors(self)
-        # make energies
-        shifted_energies = {}
-        all_shifted_ener = self.eigvals[:,:,:].flatten() - (self.efermi + self.energy_shift)
-        for key in self.keys:
-            shifted_energies[key] = self.eigvals[key,:,:].flatten() - (self.efermi + self.energy_shift)
-        all_shifted_ener = all_shifted_ener[all_shifted_ener < ylim[1]]
-        minx = np.min(all_shifted_ener) - sigma * 2
-        maxx = np.max(all_shifted_ener)  # +sigma*2
-        points = 200
-        energies = np.linspace(minx, maxx, points)
-        cohp = {}
-        flat_cohp = {}
-        integrated_cohp = {}
-        total_cohp = {}
-        for key in self.keys: # plot bands for each spin
-            cohp[key] = self.TB_model.get_COHP(self, orbs, NN=NN, include_onsite=include_onsite, spin = key)
-
-            # now plot
-            integrated_cohp[key] = np.sum(cohp[key].flatten()[self.eigvals[key][:, :].flatten() <= self.efermi + self.energy_shift])
-            print("integrated occupied cohp:",[key], integrated_cohp[key])
-            # print("max eigval:",self.eigval[:, self.num_orbs-1, 0])
-            flat_cohp[key] = cohp[key].flatten()
-
-            # create the DOS by histograms
-            # myproj, x, _ = ax.hist(shifted_energies[shifted_energies < 1], bins=numbins,weights=flat_cohp[shifted_energies < 1],color="white", orientation='horizontal')#- self.efermi
-            # smooth_cohp = smooth(myproj, 2)
-            # smooth_cohp = myproj
-
-            # create the DOS by sum of gaussians
-            flat_cohp[key] = flat_cohp[key][shifted_energies[key] < ylim[1]]
-            shifted_energies[key] = shifted_energies[key][shifted_energies[key] < ylim[1]]
-            sig = sigma  # 0.15#5/self.num_kpts**(1/2)
-            #print(key,flat_cohp[key].shape,shifted_energies[key].shape,energies.shape)
-            all_cohp = 1 / (sig * (2 * np.pi) ** (1 / 2)) * np.exp(
-                -1 / 2 * ((energies[:, None] - shifted_energies[key][None, :]) / sig) ** 2) * flat_cohp[key][None, :]
-            total_cohp[key] = np.sum(all_cohp, axis=1)
-
-        fig = plt.figure()
-        fig.set_size_inches(3, 5)
-        ax = fig.add_subplot(111)
-        # plot vertically
-        ax.plot(np.zeros(points), energies,'--', color="grey",linewidth=0.8)
-
-        linestyle = ["","--"]
-        color = ["dimgray","lightseagreen"]
-        mini = []
-        maxi = []
-        for key in self.keys:
-            ax.plot(total_cohp[key], energies,linestyle[key], color=color[key])
-            mini.append(np.min(total_cohp[key]) - 0.2)
-            maxi.append(np.max(total_cohp[key]) + 0.2)
-        mini = min(mini)
-        maxi = max(maxi)
-        # mini = -1.2
-        # maxi = 0.5
-        ax.plot([mini, maxi], [0, 0],"--", color="grey",linewidth=0.8)
-        ax.set_ylabel("Energy (eV)")
-        ax.set_xlabel("COHP")
-        plt.ylim(ylim)
-        plt.xlim((mini, maxi))
-        print("showing plot")
-        # plt.xlim((mini,maxi))
-        plt.gca().invert_xaxis()
-        fig.tight_layout()
-        plt.savefig(self.directory+'COHP_DOS.png',transparent=True,dpi=150,format='png')
-        if self.show_figs:
-            plt.show()
-        plt.close()
-
     def get_ICOHP(self):
         """
         Generates an ICOHP matrix with from the TB_Model static function. Then reduces the matrix size. Used for fast calculation of energies in crystal bond plot or other integrated energy quantities.
@@ -2570,335 +2531,6 @@ class COGITO_UNIFORM(object):
 
         return icohp
 
-    def save_ICOHP(self):
-        """
-        Saves the smaller ICOHP matrix to (self.directory+"ICOHP"+str(key)+".npy") for reading in later with COGITOico.
-        """
-        if not hasattr(self, 'ICOHP'):
-            self.get_ICOHP()
-
-        for key in self.keys:
-            np.save(self.directory+"ICOHP"+str(key),self.ICOHP[key])
-        '''
-        for key in self.keys: # plot bands for each spin
-
-            # write the TB parameters
-            wannier_hr = open(self.directory + "ICOHP"+self.file_suff+str(key)+".txt", "w")
-            wannier_hr.write("File generated by Emily Oliphant\n")
-
-            num_trans = self.ICO_trans # self.num_trans
-            each_dir = self.ICO_eachdir # self.num_each_dir
-            wannier_hr.write(str(each_dir[0])+" "+str(each_dir[1])+" "+str(each_dir[2])+" "+str(self.num_orbs) + "\n")
-
-            wannier_hr.write("start params\n")
-            for a1 in range(num_trans[0]):
-                trans1 = int(a1 - np.floor(num_trans[0] / 2))
-                for a2 in range(num_trans[1]):
-                    trans2 = int(a2 - np.floor(num_trans[1] / 2))
-                    for a3 in range(num_trans[2]):
-                        trans3 = int(a3 - np.floor(num_trans[2] / 2))
-                        for orb1 in range(self.num_orbs):
-                            for orb2 in range(self.num_orbs):
-                                realpart = f"{self.ICOHP[key][orb1, orb2, a1, a2, a3].real:.6f}"
-                                imagpart = f"{self.ICOHP[key][orb1, orb2, a1, a2, a3].imag:.6f}"
-                                wannier_hr.write(
-                                    '{:>5} {:>5} {:>5} {:>5} {:>5} {:>14} {:>14}'.format(str(trans1), str(trans2),
-                                                                                         str(trans3),
-                                                                                         str(orb1 + 1),
-                                                                                         str(orb2 + 1), realpart,
-                                                                                         imagpart) + "\n")
-        '''
-
-    def get_COOP(self, orbs: dict, NN: int = None, ylim: list = (-10, 10),sigma=0.1, include_onsite: bool = False, orbProj: bool = False,label:str=""):
-        """
-        Calculates and plots the projected COOP values on the density of states.
-
-        Args:
-            orbs (dict): Either a list of two dictionaries giving elements as keys and orbital types as items (eg [{"Pb":["s","d"],"O":["s","p"]},{"Pb":["s"]"O":["p"]}]) or give list of orb numbers [[1,2,3,5,6,7],[1,2,3,4,5,6,7,8]].
-            NN (int): An integer for which nearest neighbor number to include (eg 1 for 1NN) or None or "All" for all nearest neighbors.
-            ylim (list): The limits of the y-axis (energy) of the DOS plot.
-            sigma (float): Sets the spread (in energy) of the gaussian for the each wavefunction COOP. The full pCOOP is created by summing the gaussians.
-                        This should trade off with k-point resolution. Low resolution requires high sigma (0.2) to smear between points. High resoltion can have low sigma (0.02).
-            include_onsite (bool): Includes atomic orbital energy terms (H_ab(R) where R=0 and a=b) instead of just bonding terms.
-
-        Returns:
-            png: Saves projected COOP DOS to self.directory+'COOP_DOS.png'.
-        """
-        self.NN_index, self.NN_dists = self.TB_model.get_neighbors(self)
-        # make energies
-        shifted_energies = {}
-        all_shifted_ener = self.eigvals[:,:,:].flatten() - (self.efermi + self.energy_shift)
-        for key in self.keys:
-            shifted_energies[key] = self.eigvals[key,:,:].flatten() - (self.efermi + self.energy_shift)
-        all_shifted_ener = all_shifted_ener[all_shifted_ener < ylim[1]]
-        minx = np.min(all_shifted_ener) - sigma * 2
-        maxx = np.max(all_shifted_ener)  # +sigma*2
-        points = 200
-        energies = np.linspace(minx, maxx, points)
-        coop = {}
-        flat_coop = {}
-        integrated_coop = {}
-        total_coop = {}
-        for key in self.keys: # plot bands for each spin
-            coop[key] = self.TB_model.get_COOP(self, orbs, NN=NN, include_onsite=include_onsite, spin = key)
-
-            # now plot
-            integrated_coop[key] = np.sum(coop[key].flatten()[self.eigvals[key][:, :].flatten() <= self.efermi + self.energy_shift])
-            print("integrated occupied coop:",[key], integrated_coop[key])
-            # print("max eigval:",self.eigval[:, self.num_orbs-1, 0])
-            flat_coop[key] = coop[key].flatten()
-
-            # create the DOS by histograms
-            # myproj, x, _ = ax.hist(shifted_energies[shifted_energies < 1], bins=numbins,weights=flat_coop[shifted_energies < 1],color="white", orientation='horizontal')#- self.efermi
-            # smooth_coop = smooth(myproj, 2)
-            # smooth_coop = myproj
-
-            # create the DOS by sum of gaussians
-            flat_coop[key] = flat_coop[key][shifted_energies[key] < ylim[1]]
-            shifted_energies[key] = shifted_energies[key][shifted_energies[key] < ylim[1]]
-            sig = sigma  # 0.15#5/self.num_kpts**(1/2)
-            #print(key,flat_coop[key].shape,shifted_energies[key].shape,energies.shape)
-            all_coop = 1 / (sig * (2 * np.pi) ** (1 / 2)) * np.exp(
-                -1 / 2 * ((energies[:, None] - shifted_energies[key][None, :]) / sig) ** 2) * flat_coop[key][None, :]
-            total_coop[key] = np.sum(all_coop, axis=1)
-
-        fig = plt.figure()
-        fig.set_size_inches(3, 5)
-        ax = fig.add_subplot(111)
-        # plot vertically
-        ax.plot(np.zeros(points), energies,'--', color="grey",linewidth=0.8)
-
-        linestyle = ["","--"]
-        color = ["dimgray","lightseagreen"]
-        mini = []
-        maxi = []
-        data = {}
-        for key in self.keys:
-            data[key] = [total_coop[key],energies,linestyle[key],color[key]]
-            ax.plot(total_coop[key], energies,linestyle[key], color=color[key])
-            mini.append(np.min(total_coop[key]) - 0.05)
-            maxi.append(np.max(total_coop[key]) + 0.05)
-        mini = min(mini)
-        maxi = max(maxi)
-        # mini = -1.2
-        # maxi = 0.5
-        ax.plot([mini, maxi], [0, 0],"--", color="grey",linewidth=0.8)
-        ax.set_ylabel("Energy (eV)")
-        if orbProj:
-            ax.set_xlabel(label)
-        else:
-            ax.set_xlabel("COOP")
-        plt.ylim(ylim)
-        plt.xlim((mini, maxi))
-        print("showing plot")
-        # plt.xlim((mini,maxi))
-        #plt.gca().invert_xaxis()
-        fig.tight_layout()
-        if orbProj:
-            #plt.savefig(self.directory+'projectedDOS.png',transparent=True,dpi=150,format='png')
-            #plt.show()
-            #plt.close()
-            return ax, data
-        else:
-            plt.savefig(self.directory+'COOP_DOS.png',transparent=True,dpi=150,format='png')
-            if self.show_figs:
-                plt.show()
-            plt.close()
-
-        if len(self.keys) == 2:
-            for key in self.keys:
-                fig = plt.figure()
-                fig.set_size_inches(3, 5)
-                ax = fig.add_subplot(111)
-                # plot vertically
-                ax.plot(np.zeros(points), energies, '--', color="grey", linewidth=0.8)
-
-                linestyle = ["", "--"]
-                color = ["dimgray", "lightseagreen"]
-                mini = []
-                maxi = []
-                data = {}
-
-                data[key] = [total_coop[key], energies, linestyle[key], color[key]]
-                ax.plot(total_coop[key], energies, linestyle[key], color=color[key])
-                mini.append(np.min(total_coop[key]) - 0.05)
-                maxi.append(np.max(total_coop[key]) + 0.05)
-
-                mini = min(mini)
-                maxi = max(maxi)
-                # mini = -1.2
-                # maxi = 0.5
-                ax.plot([mini, maxi], [0, 0], "--", color="grey", linewidth=0.8)
-                ax.set_ylabel("Energy (eV)")
-                if orbProj:
-                    ax.set_xlabel(label)
-                else:
-                    ax.set_xlabel("COOP")
-                plt.ylim(ylim)
-                plt.xlim((mini, maxi))
-                print("showing plot")
-                # plt.xlim((mini,maxi))
-                # plt.gca().invert_xaxis()
-                fig.tight_layout()
-                plt.savefig(self.directory + 'COOP_DOS'+str(key)+'.png', transparent=True, dpi=150, format='png')
-                if self.show_figs:
-                    plt.show()
-                plt.close()
-
-    def get_projectedDOS(self, elem : str, ylim: list = (-10, 10), sigma: float=0.1) -> None:
-        """
-        Returns the COGITO-orbital projected density of states for a specific element.
-        This function is mostly plotting functionality for visualizing an orbital decomposed projected DOS for one element.
-        If you only need the raw projected values for specific atoms and orbitals (defined in curorbdict), just call something like: "coop = self.TB_model.get_COOP(self, [curorbdict,allorbs], include_onsite=True, spin=key)"  (similar to get_projectedBS function).
-
-        By construction, this performs the projection by Mulliken-style analysis.
-        Projection without Mulliken is obfuscated by the nonorthogonal nature of the orbitals, which causes much larger projection at high energy states due to antibonding.
-
-        Args:
-            elem (str): String of the element label. For example, "Pb".
-            ylim (tuple): The y-axis limits.
-            sigma (float): Sets the spread (in energy) of the gaussian for the each wavefunction COOP. The full pCOOP is created by summing the gaussians.
-                        This should trade off with k-point resolution. Low resolution requires high sigma (0.2) to smear between points. High resoltion can have low sigma (0.02).
-
-        Returns:
-            png: Saves the projection plot at self.directory+elem+'projectedDOS.png'.
-        """
-        self.NN_index, self.NN_dists = self.TB_model.get_neighbors(self)
-
-        allorbs = {}
-        for el in self.elements:
-            allorbs[el] = ["s","p","d","f"]
-        #elem = elem # list(orbdict.keys())[0]
-        #orbs = list(orbdict.values())[0]
-        #all_orb = ''
-        #for orb in orbs:
-        #    all_orb = all_orb+orb
-        #full_label = "% "+elem+" "+all_orb
-
-        iselemorb = np.array(self.elements)[np.array(self.orbatomnum)] == elem
-        elemorbs = np.array(self.exactorbtype)[iselemorb]
-        elemorbs = np.array([s[0] for s in elemorbs])
-        uniqelemorbs = np.unique(elemorbs)
-        colors = {}
-        colors['s'] = "tab:orange"
-        colors['p'] = "tab:blue"
-        colors['d'] = "tab:green"
-        colors['s2'] = "tab:pink"
-        colors['p2'] = "gold"
-
-        # make energies
-        shifted_energies = {}
-        all_shifted_ener = self.eigvals[:, :, :].flatten() - (self.efermi + self.energy_shift)
-        for key in self.keys:
-            shifted_energies[key] = self.eigvals[key, :, :].flatten() - (self.efermi + self.energy_shift)
-        all_shifted_ener = all_shifted_ener[all_shifted_ener < ylim[1]]
-        minx = np.min(all_shifted_ener) - sigma * 2
-        maxx = np.max(all_shifted_ener)  # +sigma*2
-        points = 200
-        energies = np.linspace(minx, maxx, points)
-
-        allprojs = []
-        for orb in uniqelemorbs:
-            curorbdict = {elem:[orb]}
-
-            total_coop = {}
-            for key in self.keys:  # plot bands for each spin
-                coop = self.TB_model.get_COOP(self, [curorbdict,allorbs], include_onsite=True, spin=key)
-
-                # now plot
-                integrated_coop = np.sum(
-                    coop.flatten()[self.eigvals[key][:, :].flatten() <= self.efermi + self.energy_shift])
-                print("integrated occupied coop:", [key], integrated_coop)
-                # print("max eigval:",self.eigval[:, self.num_orbs-1, 0])
-                flat_coop = coop.flatten()
-
-                # create the DOS by sum of gaussians
-                flat_coop = flat_coop[shifted_energies[key] < ylim[1]]
-                use_energy = shifted_energies[key][shifted_energies[key] < ylim[1]]
-                sig = sigma  # 0.15#5/self.num_kpts**(1/2)
-                all_coop = 1 / (sig * (2 * np.pi) ** (1 / 2)) * np.exp(
-                    -1 / 2 * ((energies[:, None] - use_energy[None, :]) / sig) ** 2) * flat_coop[None,:]
-                total_coop[key] = np.sum(all_coop, axis=1)
-
-            linestyle = ["", "--"]
-            color = ["dimgray", "lightseagreen"]
-            data = {}
-            for key in self.keys:
-                data[key] = [total_coop[key], energies, linestyle[key], color[key]]
-
-            allprojs.append(data)
-
-        allatmDOS = {}
-        for key in self.keys:  # plot bands for each spin
-            # now plot
-            integrated_coop = np.sum(
-                np.ones(len(self.eigvals[key][:, :].flatten()))[self.eigvals[key][:, :].flatten() <= self.efermi + self.energy_shift])
-            print("integrated occupied coop:", [key], integrated_coop)
-            # print("max eigval:",self.eigval[:, self.num_orbs-1, 0])
-            flat_coop = np.ones(len(self.eigvals[key][:, :].flatten()))/self.num_kpts
-
-            # create the DOS by sum of gaussians
-            flat_coop = flat_coop[shifted_energies[key] < ylim[1]]
-            use_energy = shifted_energies[key][shifted_energies[key] < ylim[1]]
-            sig = sigma  # 0.15#5/self.num_kpts**(1/2)
-            all_coop = 1 / (sig * (2 * np.pi) ** (1 / 2)) * np.exp(
-                -1 / 2 * ((energies[:, None] - use_energy[None, :]) / sig) ** 2) * flat_coop[None,:]
-            allatmDOS[key] = np.sum(all_coop, axis=1)
-
-
-        fig = plt.figure()
-        fig.set_size_inches(3, 5)
-        ax = fig.add_subplot(111)
-        # plot vertically
-        #ax.plot(np.zeros(points), energies, '--', color="grey", linewidth=0.8)
-        total_dos = {}
-        for key in self.keys:
-            total_dos[key] = np.zeros(len(allprojs[0][key][0]))
-        for i,data in enumerate(allprojs):
-            for key in self.keys:
-                #data[key] = [total_coop[key],energies,linestyle[key],color[key]]
-                if len(self.keys)==2:
-                    if key==0:
-                        sign=-1
-                    else:
-                        sign=+1
-                else:
-                    sign=+1
-                if key ==0:
-                    ax.plot(sign*data[key][0], data[key][1],data[key][2],label=uniqelemorbs[i],color=colors[uniqelemorbs[i]])
-                else:
-                    ax.plot(sign*data[key][0], data[key][1],data[key][2],color=colors[uniqelemorbs[i]])
-
-                total_dos[key] += data[key][0]
-        for key in self.keys:
-            if len(self.keys)==2:
-                if key==0:
-                    sign=-1
-                else:
-                    sign=+1
-            else:
-                sign=+1
-            ax.plot(sign*total_dos[key], data[key][1],'--',color="gray",label=elem,linewidth=1)
-            ax.plot(sign*allatmDOS[key], data[key][1],data[key][2],color="black",label="total",linewidth=1)
-        max_proj = np.amax(allatmDOS[key][(data[key][1]>ylim[0]) & (data[key][1] < 0)])
-
-        ax.plot([0,0], [ylim[0],ylim[1]],'--', color="grey",linewidth=0.8)
-
-        if len(self.keys)==2:
-            plt.xlim((-(max_proj + 1), max_proj + 1))
-            ax.plot([-(max_proj + 1), max_proj+1], [0, 0],"--", color="grey",linewidth=2)
-        else:
-            ax.plot([-0.05, max_proj + 0.1], [0, 0], "--", color="grey", linewidth=2)
-            plt.xlim((-0.05, max_proj + 0.1))
-        plt.ylim(ylim)
-        ax.set_xlabel("orbital pDOS")
-        ax.set_ylabel("Energy (eV)")
-        plt.legend()
-        plt.tight_layout()
-        fig.savefig(self.directory+elem+'projectedDOS.png',transparent=True,dpi=150,format='png')
-        if self.show_figs:
-            plt.show()
-        plt.close()
 
     def get_ICOOP(self):
         """
@@ -3079,35 +2711,746 @@ class COGITO_UNIFORM(object):
 
         for key in self.keys:
             np.save(self.directory+"ICOOP"+str(key),self.ICOOP[key])
-        '''
+
+
+    def save_ICOHP(self):
+        """
+        Saves the smaller ICOHP matrix to (self.directory+"ICOHP"+str(key)+".npy") for reading in later with COGITOico.
+        """
+        if not hasattr(self, 'ICOHP'):
+            self.get_ICOHP()
+
+        for key in self.keys:
+            np.save(self.directory+"ICOHP"+str(key),self.ICOHP[key])
+
+    @staticmethod
+    def get_mulliken_charge(self: object,elem: str, only_onsite=False) -> float:
+        """
+        Returns the atomic partial charge by Mulliken partitioning. If the calculation is spin polarized, also returns the atomic magnetization by Mulliken.
+        If the element label (str) is used, the code returns the average charge/magnetization for the element type.
+
+        Args:
+            elem (str or int): Either the element label (e.g. "Pb") or the index of the atom in the list of atoms (as seen in tb_input.txt).
+                                When is the element label, the function will return a value for each atom of that type.
+            only_onsite (bool): Default False. If True, don't actually do the Mulliken repartitioning from bonds, only include onsite charges.
+                                Note if True: Summing only atoms with onsite charge will not be charge neutral, need to include bond charge for neutrality.
+
+        Returns:
+            (float or tuple): Atomic partial charge or if spin polarized, (partial charge, atomic magnetic moment).
+                              If elem is element label (e.g. "Pb"), returns a list for charge and magmom.
+        """
+        if not hasattr(self, 'ICOOP'):
+            self.get_ICOOP()
+        icoop_orb = self.ICOOP
+        each_dir = self.ICO_eachdir
+
+        # find the orbitals to use
+        atm_orbs = []
+        if type(elem) is str:
+            atm_nums = np.arange(len(self.elements))[self.elements == elem]
+            for atmnum in atm_nums:
+                numatmorbs = len(np.arange(self.num_orbs)[self.orbatomnum == atmnum])
+                atm_orbs.append(np.arange(self.num_orbs)[self.orbatomnum == atmnum])
+        else: # type is int
+            atm_nums = [elem]
+            for atmnum in atm_nums:
+                numatmorbs = len(np.arange(self.num_orbs)[self.orbatomnum == atmnum])
+                atm_orbs.append(np.arange(self.num_orbs)[self.orbatomnum == atmnum])
+        atm_orbs = np.array(atm_orbs)
+        icoop_orb = self.ICOOP
+        onsite_occup = np.zeros((len(self.keys),len(atm_nums), numatmorbs))
+        mulli_occup = np.zeros((len(self.keys),len(atm_nums), numatmorbs))
+        for key in self.keys:
+            for i in range(len(atm_nums)):
+                orbs = atm_orbs[i]
+                onsite_occup[key][i] = np.sum(icoop_orb[key][orbs][:,orbs,each_dir[0],each_dir[1],each_dir[2]], axis=1)
+                mulli_occup[key][i] = np.sum(icoop_orb[key][orbs], axis=(1, 2, 3, 4))
+        if only_onsite:
+            mulli_occup = onsite_occup
+
+        electron_occ = np.zeros(len(atm_nums))
+        for key in self.keys:
+            electron_mag = electron_occ - np.sum(mulli_occup[key],axis=1) # difference between spin = 0 and spin = 1
+            electron_occ = electron_occ +  np.sum(mulli_occup[key],axis=1)
+
+        if len(self.keys) == 1: # multiply by two for spin degeneracy
+            electron_occ = electron_occ*2
+            electron_mag[:] = 0 # no magnetism
+
+        if not (type(elem) is str): # not return a single value instead of a length 1 list
+            electron_occ = electron_occ[0]
+            electron_mag = electron_mag[0]
+
+        mulk_charge = np.around(self.elec_count[atm_nums[0]] - electron_occ,decimals=6).tolist()
+        electron_mag = np.around(electron_mag,decimals=6).tolist()
+
+        if len(self.keys) == 1:
+            return mulk_charge
+        else: # has spin and mag
+            return mulk_charge, electron_mag
+
+    @staticmethod
+    def get_occupation(self, spin: int = 0):
+        """
+        This function prints information about electron occupation/partitioning. It prints a version using Mulliken to
+        assign charge to orbitals and one that just uses the onsite orbital terms. The onsite one will not be charge balanced as some charge is in bonds.
+        It also prints the atomic partial charge by Mulliken population.
+        """
+        # now get and partition the electron charge to atoms or atoms and bond centers
+        #def get_partial_charge(self):
+        N_i = np.zeros(self.num_orbs)
+        mnk2 = np.transpose(self.eigvecs[spin],axes=(0,2,1)) #[kpt,band,orb]
+        cj = mnk2[:, :, None, :]  # self.mnkcoefficients[:,:,None,:]
+        ci2 = np.conj(mnk2[:, :, :, None])  # self.mnkcoefficients[:,:,:,None])
+        Sij = self.Sij[spin][:, None, :, :]
+
+        fnk = np.zeros((self.num_kpts, self.num_orbs), dtype=np.float64)
+        sum_n = np.zeros((self.num_orbs,self.num_orbs), dtype=np.complex128)
+        for k in range(self.num_kpts):
+            for i in range(self.num_orbs):
+                if self.eigvals[spin][k, i] <= (self.efermi+self.energy_shift):
+                    fnk[k, i] = 1
+                    sum_n += np.conj(mnk2[k, i, :, None])*mnk2[k, i, None, :] * self.Sij[spin][k, :, :] / self.num_kpts
+                elif self.eigvals[spin][k, i] > (self.efermi+self.energy_shift):
+                    fnk[k, i] = 0
+
+        #new_fnk = fnk[:, :, None, None]
+
+        #Ni_value = ci2 * cj * new_fnk * Sij / self.num_kpts
+        #sum_k = np.sum(Ni_value, axis=0)
+        #sum_n = np.sum(sum_k, axis=0)
+        sum_j = np.sum(sum_n, axis=0)
+        N_i = sum_j
+        realN_i = np.real(N_i)
+        #print('realNi: ', realN_i)
+        sum_Ni = np.sum(realN_i)
+        #print('sum: ', sum_Ni)
+
+        # get just the atomic portion (no charge from the overlap density)
+        diag_Sij = self.Sij[spin].diagonal(0,1,2) # [kpt,orb]
+        #print("diag Sij:",diag_Sij)
+        ci_2 = np.conj(mnk2)*mnk2 #[kpt,band,orb]
+        get_atomic_Ni = ci_2*diag_Sij[:,None,:]*fnk[:,:,None] / self.num_kpts
+        sum_k = np.sum(get_atomic_Ni, axis=0)
+        atomic_Ni = np.sum(sum_k, axis=0).real
+        #print("atomic Ni:",atomic_Ni)
+
+        # output charge on each atom
+        # write num protons into tb_input.txt
+        N_e = []
+        for each_atom in range(max(self.orbatomnum) + 1):
+            num_e_each = 0  # starts at 0, resets for every atom
+            for i in range(len(self.orbatomnum)):
+                if self.orbatomnum[i] == each_atom:
+                    num_e_each = realN_i[i] + num_e_each
+            N_e.append(num_e_each)
+
+        #print("num_pro: ", self.num_pro)
+        #print('unique elements: ', self.unique_elems)
+
+        #N_p = np.zeros(len(self.elements))
+        # print('beginingn Ne array: ', N_p_current)
+        #for i in range(len(self.elements)):
+        #    one_atom = self.elements[i]
+        #    # print(one_atom)
+        #    ind = np.where(np.array(self.unique_elems) == one_atom)[0][0]
+        #    # print(ind)
+        #    N_p[i] = self.num_pro[ind]
+        #print('corrected Np array based on atoms in the system:', N_p)
+
+        # num_e_each = 2 * num_e_each # multiply by 2, since Ni doesn't account for degeneracy
+        N_e = np.array(N_e) * 2
+        print("")
+        print("Where are the electrons?")
+        print('orbital + overlap occupation:', realN_i*2)
+        print('sum: ', sum_Ni*2)
+        print("orbital occupation without bonds:",atomic_Ni*2)
+        print('The electron occupation for the atoms ', self.elements, ' is ', N_e)
+
+        #oxid_state = N_p - N_e
+        #print('the oxidation state for the atoms ', self.elements, ' is ', oxid_state)
+
+    @staticmethod
+    def get_COHP_DOS(self, orbs: dict, max_dist:float=None, min_dist:float=None, NN: int = None, ylim: list = (-10, 10),sigma=0.1, include_onsite: bool = False, save_plot:bool=True):
+        """
+        Calculates and plots the projected COHP values on the density of states.
+
+        Args:
+            orbs (dict): Either a list of two dictionaries giving elements as keys and orbital types as items (eg [{"Pb":["s","d"],"O":["s","p"]},{"Pb":["s"]"O":["p"]}])
+            or give list of orb numbers [[1,2,3,5,6,7],[1,2,3,4,5,6,7,8]].See atmorb_dict_to_ind() for more details.
+            max_dist (float): The maximum distance to include. Default of None reverts to filtering based on 'NN'.
+            min_dist (float): The minimum distance to include. Default of None sets to 0.0 (but to really include onsite terms, 'include_onsite' below must be set to True).
+            NN (int): Alternative/old way to filtering distance terms. Is less robust because requires segmenting NNs.
+                        An integer for which nearest neighbor number to include (eg 1 for 1NN) or None or "All" for all nearest neighbors.
+            ylim (list): The limits of the y-axis (energy) of the DOS plot.
+            sigma (float): Sets the spread (in energy) of the gaussian for the each wavefunction COHP. The full pCOHP is created by summing the gaussians.
+                        This should trade off with k-point resolution. Low resolution requires high sigma (0.2) to smear between points. High resoltion can have low sigma (0.02).
+            include_onsite (bool): Includes atomic orbital energy terms (H_ab(R) where R=0 and a=b) instead of just bonding terms.
+
+        Returns:
+            Tuple of (1D energies, and dict{spin: 1D COHP values}). The energies are shifted so that Efermi=0
+            png: Saves projected COHP DOS to self.directory+'COHP_DOS.png'.
+        """
+        # make energies
+        shifted_energies = {}
+        all_shifted_ener = self.eigvals[:,:,:].flatten() - (self.efermi + self.energy_shift)
+        for key in self.keys:
+            shifted_energies[key] = self.eigvals[key,:,:].flatten() - (self.efermi + self.energy_shift)
+        all_shifted_ener = all_shifted_ener[all_shifted_ener < ylim[1]]
+        minx = np.min(all_shifted_ener) - sigma * 2
+        maxx = np.max(all_shifted_ener)  # +sigma*2
+        points = int((maxx-minx)*50)
+        energies = np.linspace(minx, maxx, points)
+        cohp = {}
+        flat_cohp = {}
+        integrated_cohp = {}
+        total_cohp = {}
         for key in self.keys: # plot bands for each spin
+            cohp[key] = self.TB_model.get_COHP(self, orbs,max_dist=max_dist,min_dist=min_dist, NN=NN, include_onsite=include_onsite, spin = key)
 
-            # write the TB parameters
-            wannier_hr = open(self.directory + "ICOOP"+self.file_suff+str(key)+".txt", "w")
-            wannier_hr.write("File generated by Emily Oliphant\n")
+            # now plot
+            integrated_cohp[key] = np.sum(cohp[key].flatten()[self.eigvals[key][:, :].flatten() <= self.efermi + self.energy_shift])
+            print("integrated occupied cohp:",[key], integrated_cohp[key])
+            # print("max eigval:",self.eigval[:, self.num_orbs-1, 0])
+            flat_cohp[key] = cohp[key].flatten()
 
-            num_trans = self.ICO_trans # self.num_trans
-            each_dir = self.ICO_eachdir # self.num_each_dir
-            wannier_hr.write(str(each_dir[0])+" "+str(each_dir[1])+" "+str(each_dir[2])+" "+str(self.num_orbs) + "\n")
+            # create the DOS by histograms
+            # myproj, x, _ = ax.hist(shifted_energies[shifted_energies < 1], bins=numbins,weights=flat_cohp[shifted_energies < 1],color="white", orientation='horizontal')#- self.efermi
+            # smooth_cohp = smooth(myproj, 2)
+            # smooth_cohp = myproj
 
-            wannier_hr.write("start params\n")
-            for a1 in range(num_trans[0]):
-                trans1 = int(a1 - np.floor(num_trans[0] / 2))
-                for a2 in range(num_trans[1]):
-                    trans2 = int(a2 - np.floor(num_trans[1] / 2))
-                    for a3 in range(num_trans[2]):
-                        trans3 = int(a3 - np.floor(num_trans[2] / 2))
-                        for orb1 in range(self.num_orbs):
-                            for orb2 in range(self.num_orbs):
-                                realpart = f"{self.ICOOP[key][orb1, orb2, a1, a2, a3].real:.6f}"
-                                imagpart = f"{self.ICOOP[key][orb1, orb2, a1, a2, a3].imag:.6f}"
-                                wannier_hr.write(
-                                    '{:>5} {:>5} {:>5} {:>5} {:>5} {:>14} {:>14}'.format(str(trans1), str(trans2),
-                                                                                         str(trans3),
-                                                                                         str(orb1 + 1),
-                                                                                         str(orb2 + 1), realpart,
-                                                                                         imagpart) + "\n")
-        '''
+            # create the DOS by sum of gaussians
+            flat_cohp[key] = flat_cohp[key][shifted_energies[key] < ylim[1]]
+            shifted_energies[key] = shifted_energies[key][shifted_energies[key] < ylim[1]]
+            sig = sigma  # 0.15#5/self.num_kpts**(1/2)
+            #print(key,flat_cohp[key].shape,shifted_energies[key].shape,energies.shape)
+            all_cohp = 1 / (sig * (2 * np.pi) ** (1 / 2)) * np.exp(
+                -1 / 2 * ((energies[:, None] - shifted_energies[key][None, :]) / sig) ** 2) * flat_cohp[key][None, :]
+            total_cohp[key] = np.sum(all_cohp, axis=1)
+
+        if save_plot:
+            fig = plt.figure()
+            fig.set_size_inches(3, 5)
+            ax = fig.add_subplot(111)
+            # plot vertically
+            ax.plot(np.zeros(points), energies,'--', color="grey",linewidth=0.8)
+
+            linestyle = ["","--"]
+            color = ["dimgray","lightseagreen"]
+            mini = []
+            maxi = []
+            for key in self.keys:
+                ax.plot(total_cohp[key], energies,linestyle[key], color=color[key])
+                mini.append(np.min(total_cohp[key]) - 0.2)
+                maxi.append(np.max(total_cohp[key]) + 0.2)
+            mini = min(mini)
+            maxi = max(maxi)
+            # mini = -1.2
+            # maxi = 0.5
+            ax.plot([mini, maxi], [0, 0],"--", color="grey",linewidth=0.8)
+            ax.set_ylabel("Energy (eV)")
+            ax.set_xlabel("COHP")
+            plt.ylim(ylim)
+            plt.xlim((mini, maxi))
+            print("showing plot")
+            # plt.xlim((mini,maxi))
+            plt.gca().invert_xaxis()
+            fig.tight_layout()
+            plt.savefig(self.directory+'COHP_DOS.png',transparent=True,dpi=150,format='png')
+            if self.show_figs:
+                plt.show()
+            plt.close()
+
+            if len(self.keys) == 2:
+                for key in self.keys:
+                    fig = plt.figure()
+                    fig.set_size_inches(3, 5)
+                    ax = fig.add_subplot(111)
+                    # plot vertically
+                    ax.plot(np.zeros(points), energies, '--', color="grey", linewidth=0.8)
+
+                    linestyle = ["", "--"]
+                    color = ["dimgray", "lightseagreen"]
+                    mini = []
+                    maxi = []
+                    data = {}
+
+                    data[key] = [total_cohp[key], energies, linestyle[key], color[key]]
+                    ax.plot(total_cohp[key], energies, linestyle[key], color=color[key])
+                    mini.append(np.min(total_cohp[key]) - 0.05)
+                    maxi.append(np.max(total_cohp[key]) + 0.05)
+
+                    mini = min(mini)
+                    maxi = max(maxi)
+                    # mini = -1.2
+                    # maxi = 0.5
+                    ax.plot([mini, maxi], [0, 0], "--", color="grey", linewidth=0.8)
+                    ax.set_ylabel("Energy (eV)")
+                    ax.set_xlabel("COHP")
+                    plt.ylim(ylim)
+                    plt.xlim((mini, maxi))
+                    print("showing plot")
+                    # plt.xlim((mini,maxi))
+                    # plt.gca().invert_xaxis()
+                    fig.tight_layout()
+                    plt.savefig(self.directory + 'COHP_DOS' + str(key) + '.png', transparent=True, dpi=150,
+                                format='png')
+                    if self.show_figs:
+                        plt.show()
+                    plt.close()
+
+        return energies, total_cohp
+
+    @staticmethod
+    def get_COOP_DOS(self, orbs: dict, max_dist:float=None, min_dist:float=None, NN: int = None, ylim: list = (-10, 10),sigma=0.1, include_onsite: bool = False, save_plot:bool=True):
+        """
+        Calculates and plots the projected COOP values on the density of states.
+
+        Args:
+            orbs (dict): Either a list of two dictionaries giving elements as keys and orbital types as items (eg [{"Pb":["s","d"],"O":["s","p"]},{"Pb":["s"]"O":["p"]}])
+            or give list of orb numbers [[1,2,3,5,6,7],[1,2,3,4,5,6,7,8]].See atmorb_dict_to_ind() for more details.
+            max_dist (float): The maximum distance to include. Default of None reverts to filtering based on 'NN'.
+            min_dist (float): The minimum distance to include. Default of None sets to 0.0 (but to really include onsite terms, 'include_onsite' below must be set to True).
+            NN (int): Alternative/old way to filtering distance terms. Is less robust because requires segmenting NNs.
+                        An integer for which nearest neighbor number to include (eg 1 for 1NN) or None or "All" for all nearest neighbors.
+            ylim (list): The limits of the y-axis (energy) of the DOS plot.
+            sigma (float): Sets the spread (in energy) of the gaussian for the each wavefunction COOP. The full pCOOP is created by summing the gaussians.
+                        This should trade off with k-point resolution. Low resolution requires high sigma (0.2) to smear between points. High resoltion can have low sigma (0.02).
+            include_onsite (bool): Includes atomic orbital energy terms (H_ab(R) where R=0 and a=b) instead of just bonding terms.
+
+        Returns:
+            Tuple of (1D energies, and dict{spin: 1D COOP values}). The energies are shifted so that Efermi=0
+            png: Saves projected COOP DOS to self.directory+'COOP_DOS.png'.
+        """
+        # make energies
+        shifted_energies = {}
+        all_shifted_ener = self.eigvals[:,:,:].flatten() - (self.efermi + self.energy_shift)
+        for key in self.keys:
+            shifted_energies[key] = self.eigvals[key,:,:].flatten() - (self.efermi + self.energy_shift)
+        all_shifted_ener = all_shifted_ener[all_shifted_ener < ylim[1]]
+        minx = np.min(all_shifted_ener) - sigma * 2
+        maxx = np.max(all_shifted_ener)  # +sigma*2
+        points = int((maxx-minx)*50)
+        energies = np.linspace(minx, maxx, points)
+        coop = {}
+        flat_coop = {}
+        integrated_coop = {}
+        total_coop = {}
+        for key in self.keys: # plot bands for each spin
+            coop[key] = self.TB_model.get_COOP(self, orbs,max_dist=max_dist,min_dist=min_dist, NN=NN, include_onsite=include_onsite, spin = key)
+
+            # now plot
+            integrated_coop[key] = np.sum(coop[key].flatten()[self.eigvals[key][:, :].flatten() <= self.efermi + self.energy_shift])
+            print("integrated occupied coop:",[key], integrated_coop[key])
+            # print("max eigval:",self.eigval[:, self.num_orbs-1, 0])
+            flat_coop[key] = coop[key].flatten()
+
+            # create the DOS by histograms
+            # myproj, x, _ = ax.hist(shifted_energies[shifted_energies < 1], bins=numbins,weights=flat_coop[shifted_energies < 1],color="white", orientation='horizontal')#- self.efermi
+            # smooth_coop = smooth(myproj, 2)
+            # smooth_coop = myproj
+
+            # create the DOS by sum of gaussians
+            flat_coop[key] = flat_coop[key][shifted_energies[key] < ylim[1]]
+            shifted_energies[key] = shifted_energies[key][shifted_energies[key] < ylim[1]]
+            sig = sigma  # 0.15#5/self.num_kpts**(1/2)
+            #print(key,flat_coop[key].shape,shifted_energies[key].shape,energies.shape)
+            all_coop = 1 / (sig * (2 * np.pi) ** (1 / 2)) * np.exp(
+                -1 / 2 * ((energies[:, None] - shifted_energies[key][None, :]) / sig) ** 2) * flat_coop[key][None, :]
+            total_coop[key] = np.sum(all_coop, axis=1)
+
+        if save_plot:
+            fig = plt.figure()
+            fig.set_size_inches(3, 5)
+            ax = fig.add_subplot(111)
+            # plot vertically
+            ax.plot(np.zeros(points), energies,'--', color="grey",linewidth=0.8)
+
+            linestyle = ["","--"]
+            color = ["dimgray","lightseagreen"]
+            mini = []
+            maxi = []
+            data = {}
+            for key in self.keys:
+                data[key] = [total_coop[key],energies,linestyle[key],color[key]]
+                ax.plot(total_coop[key], energies,linestyle[key], color=color[key])
+                mini.append(np.min(total_coop[key]) - 0.05)
+                maxi.append(np.max(total_coop[key]) + 0.05)
+            mini = min(mini)
+            maxi = max(maxi)
+            # mini = -1.2
+            # maxi = 0.5
+            ax.plot([mini, maxi], [0, 0],"--", color="grey",linewidth=0.8)
+            ax.set_ylabel("Energy (eV)")
+            ax.set_xlabel("COOP")
+            plt.ylim(ylim)
+            plt.xlim((mini, maxi))
+            print("showing plot")
+            # plt.xlim((mini,maxi))
+            #plt.gca().invert_xaxis()
+            fig.tight_layout()
+            plt.savefig(self.directory+'COOP_DOS.png',transparent=True,dpi=150,format='png')
+            if self.show_figs:
+                plt.show()
+            plt.close()
+
+            if len(self.keys) == 2:
+                for key in self.keys:
+                    fig = plt.figure()
+                    fig.set_size_inches(3, 5)
+                    ax = fig.add_subplot(111)
+                    # plot vertically
+                    ax.plot(np.zeros(points), energies, '--', color="grey", linewidth=0.8)
+
+                    linestyle = ["", "--"]
+                    color = ["dimgray", "lightseagreen"]
+                    mini = []
+                    maxi = []
+                    data = {}
+
+                    data[key] = [total_coop[key], energies, linestyle[key], color[key]]
+                    ax.plot(total_coop[key], energies, linestyle[key], color=color[key])
+                    mini.append(np.min(total_coop[key]) - 0.05)
+                    maxi.append(np.max(total_coop[key]) + 0.05)
+
+                    mini = min(mini)
+                    maxi = max(maxi)
+                    # mini = -1.2
+                    # maxi = 0.5
+                    ax.plot([mini, maxi], [0, 0], "--", color="grey", linewidth=0.8)
+                    ax.set_ylabel("Energy (eV)")
+                    ax.set_xlabel("COOP")
+                    plt.ylim(ylim)
+                    plt.xlim((mini, maxi))
+                    print("showing plot")
+                    # plt.xlim((mini,maxi))
+                    # plt.gca().invert_xaxis()
+                    fig.tight_layout()
+                    plt.savefig(self.directory + 'COOP_DOS'+str(key)+'.png', transparent=True, dpi=150, format='png')
+                    if self.show_figs:
+                        plt.show()
+                    plt.close()
+
+        return energies, total_coop
+
+    @staticmethod
+    def get_projectedDOS(self, elem : str, ylim: list = (-10, 10), sigma: float=0.1, mulliken: bool=True, save_plot:bool=True):
+        """
+        Returns the COGITO-orbital projected density of states for a specific element.
+        This function is mostly plotting functionality for visualizing an orbital decomposed projected DOS for one element.
+        If you only need the raw projected values (at kpt,band indices instead of on energy axis) for specific atoms and orbitals (defined in orbdict), use the indices
+        returned by COGITO_TB_Model.atmorb_dict_to_ind(my_TB/UN/BS class, {"Si":["s","p"]}) on the projections returned by COGITO_TB_Model.get_orbprojs(my_UN/BS class, spin=0) (where spin is a 0 or 1 int).
+
+        By construction, this performs the projection by Mulliken-style analysis.
+        Projection without Mulliken is obfuscated by the nonorthogonal nature of the orbitals, which causes much larger projection at high energy states due to antibonding.
+
+        Args:
+            self (obj): COGITO_UNIFORM class object.
+            elem (str): String of the element label. For example, "Pb".
+            ylim (tuple): The y-axis limits.
+            sigma (float): Sets the spread (in energy) of the gaussian for the each wavefunction COOP. The full pCOOP is created by summing the gaussians.
+                        This should trade off with k-point resolution. Low resolution requires high sigma (0.2) to smear between points. High resoltion can have low sigma (0.02).
+            mulliken (bool): Whether to do mulliken projection or onsite projection. For nonorthogonal basis, the sum of the onsite projection
+                        is <1 for bonding states and >1 (often by 2-5x) for antibonding states.
+
+        Returns:
+            Tuple of (1D energies, dict{spin: 1D total DOS}, dict{spin: dict{orbtype: 1D projected DOS}}). The energies are shifted so that Efermi=0
+            png: Saves the projection plot at self.directory+elem+'projectedDOS.png'.
+        """
+
+        allorbs = {}
+        for el in self.elements:
+            allorbs[el] = ["s","p","d","f"]
+        #elem = elem # list(orbdict.keys())[0]
+        #orbs = list(orbdict.values())[0]
+        #all_orb = ''
+        #for orb in orbs:
+        #    all_orb = all_orb+orb
+        #full_label = "% "+elem+" "+all_orb
+
+        iselemorb = np.array(self.elements)[np.array(self.orbatomnum)] == elem
+        elemorbs = np.array(self.exactorbtype)[iselemorb]
+        elemorbs = np.array([s[0] for s in elemorbs])
+        uniqelemorbs = np.unique(elemorbs)
+        colors = {}
+        colors['s'] = "tab:orange"
+        colors['p'] = "tab:blue"
+        colors['d'] = "tab:green"
+        colors['s2'] = "tab:pink"
+        colors['p2'] = "gold"
+
+        # make energies
+        shifted_energies = {}
+        all_shifted_ener = self.eigvals[:, :, :].flatten() - (self.efermi + self.energy_shift)
+        for key in self.keys:
+            shifted_energies[key] = self.eigvals[key, :, :].flatten() - (self.efermi + self.energy_shift)
+        all_shifted_ener = all_shifted_ener[all_shifted_ener < ylim[1]]
+        minx = np.min(all_shifted_ener) - sigma * 2
+        maxx = np.max(all_shifted_ener)  # +sigma*2
+        points = int((maxx-minx)*50)
+        energies = np.linspace(minx, maxx, points)
+
+        allprojs = []
+        orb_projs = {}
+        all_projs = {}
+        for key in self.keys:
+            orb_projs[key] = {}
+            all_projs[key] = self.TB_model.get_orbprojs(self, spin=key,mulliken=mulliken)
+
+
+        for orb in uniqelemorbs:
+            curorbdict = {elem:[orb]}
+            orb_inds = COGITO_TB_Model.atmorb_dict_to_ind(self, curorbdict)
+
+            total_coop = {}
+            for key in self.keys:  # plot bands for each spin
+                projs = np.sum(all_projs[key][:,:,orb_inds],axis=2)
+                #if mulliken:
+                #    projs = self.TB_model.get_COOP(self, [curorbdict,allorbs], include_onsite=True, spin=key)
+                #else:
+                #    projs = self.TB_model.get_COOP(self, [curorbdict,curorbdict], NN=0,include_onsite=True, spin=key)
+
+                # now plot
+                integrated_coop = np.sum(
+                    projs.flatten()[self.eigvals[key][:, :].flatten() <= self.efermi + self.energy_shift])
+                print("integrated occupied coop:", [key], integrated_coop)
+                # print("max eigval:",self.eigval[:, self.num_orbs-1, 0])
+                flat_coop = projs.flatten()
+
+                # create the DOS by sum of gaussians
+                flat_coop = flat_coop[shifted_energies[key] < ylim[1]]
+                use_energy = shifted_energies[key][shifted_energies[key] < ylim[1]]
+                sig = sigma  # 0.15#5/self.num_kpts**(1/2)
+                all_coop = 1 / (sig * (2 * np.pi) ** (1 / 2)) * np.exp(
+                    -1 / 2 * ((energies[:, None] - use_energy[None, :]) / sig) ** 2) * flat_coop[None,:]
+                total_coop[key] = np.sum(all_coop, axis=1)
+
+            linestyle = ["", "--"]
+            color = ["dimgray", "lightseagreen"]
+            data = {}
+            for key in self.keys:
+                data[key] = [total_coop[key], energies, linestyle[key], color[key]]
+                orb_projs[key][orb] = total_coop[key]
+
+            allprojs.append(data)
+
+        total_dos = {}
+        for key in self.keys:
+            total_dos[key] = np.zeros(len(allprojs[0][key][0]))
+        for i, data in enumerate(allprojs):
+            for key in self.keys:
+                total_dos[key] += data[key][0]
+
+        allatmDOS = {}
+        for key in self.keys:  # plot bands for each spin
+            # now plot
+            integrated_coop = np.sum(
+                np.ones(len(self.eigvals[key][:, :].flatten()))[self.eigvals[key][:, :].flatten() <= self.efermi + self.energy_shift])
+            print("integrated occupied coop:", [key], integrated_coop)
+            # print("max eigval:",self.eigval[:, self.num_orbs-1, 0])
+            flat_coop = np.ones(len(self.eigvals[key][:, :].flatten()))/self.num_kpts
+
+            # create the DOS by sum of gaussians
+            flat_coop = flat_coop[shifted_energies[key] < ylim[1]]
+            use_energy = shifted_energies[key][shifted_energies[key] < ylim[1]]
+            sig = sigma  # 0.15#5/self.num_kpts**(1/2)
+            all_coop = 1 / (sig * (2 * np.pi) ** (1 / 2)) * np.exp(
+                -1 / 2 * ((energies[:, None] - use_energy[None, :]) / sig) ** 2) * flat_coop[None,:]
+            allatmDOS[key] = np.sum(all_coop, axis=1)
+
+        if save_plot:
+            fig = plt.figure()
+            fig.set_size_inches(3, 5)
+            ax = fig.add_subplot(111)
+            # plot vertically
+            #ax.plot(np.zeros(points), energies, '--', color="grey", linewidth=0.8)
+            for i,data in enumerate(allprojs):
+                for key in self.keys:
+                    #data[key] = [total_coop[key],energies,linestyle[key],color[key]]
+                    if len(self.keys)==2:
+                        if key==0:
+                            sign=-1
+                        else:
+                            sign=+1
+                    else:
+                        sign=+1
+                    if key ==0:
+                        ax.plot(sign*data[key][0], data[key][1],data[key][2],label=uniqelemorbs[i],color=colors[uniqelemorbs[i]])
+                    else:
+                        ax.plot(sign*data[key][0], data[key][1],data[key][2],color=colors[uniqelemorbs[i]])
+
+            for key in self.keys:
+                if len(self.keys)==2:
+                    if key==0:
+                        sign=-1
+                    else:
+                        sign=+1
+                else:
+                    sign=+1
+                ax.plot(sign*total_dos[key], data[key][1],'--',color="gray",label=elem,linewidth=1)
+                ax.plot(sign*allatmDOS[key], data[key][1],data[key][2],color="black",label="total",linewidth=1)
+            max_proj = np.amax(allatmDOS[key][(data[key][1]>ylim[0]) & (data[key][1] < 0)])
+
+            ax.plot([0,0], [ylim[0],ylim[1]],'--', color="grey",linewidth=0.8)
+
+            if len(self.keys)==2:
+                plt.xlim((-(max_proj + 1), max_proj + 1))
+                ax.plot([-(max_proj + 1), max_proj+1], [0, 0],"--", color="grey",linewidth=2)
+            else:
+                ax.plot([-0.05, max_proj + 0.1], [0, 0], "--", color="grey", linewidth=2)
+                plt.xlim((-0.05, max_proj + 0.1))
+            plt.ylim(ylim)
+            ax.set_xlabel("orbital pDOS")
+            ax.set_ylabel("Energy (eV)")
+            plt.legend()
+            plt.tight_layout()
+            fig.savefig(self.directory+elem+'projectedDOS.png',transparent=True,dpi=150,format='png')
+            if self.show_figs:
+                plt.show()
+            plt.close()
+
+        return energies, orb_projs, allatmDOS
+
+    @staticmethod
+    def get_pymatgen_bandstruc(self, mulliken: bool=True):
+        """
+        This function will generate a pymatgen bandstructure class object that is projected with the COGITO orbitals.
+        Args:
+            self: COGITO_UNIFORM object
+            mulliken: Whether to do mulliken projection or onsite projection. For nonorthogonal basis, the sum of the onsite projection
+                        is <1 for bonding states and >1 (often by 2-5x) for antibonding states.
+
+        Returns: pymatgen BandStructureSymmLine object
+        """
+        from pymatgen.electronic_structure.core import Spin
+
+        projections = {}
+        pymat_projs = {}
+        eigenvals = {}
+        temp_pyproj = np.zeros((self.num_orbs,self.num_kpts,16,self.numAtoms))
+        for key in self.keys: # plot bands for each spin
+            projections[key] = self.TB_model.get_orbprojs(self, spin = key) #[kpt,band,orb]
+
+            # rearrange projections to have shape (band_index, kpoint_index, orbital_index, ion_index) where orbital index is same as sph_harm_key
+            first_temp = np.transpose(projections[key], (1, 0, 2)) #[band,kpt,orb]
+            temp_pyproj[:,:,self.sph_harm_key, self.orbatomnum] = first_temp #[kpt, band, orbperatm, atm]
+            if key == 0 or key =='0':
+                pymat_projs[Spin.up] = temp_pyproj
+                eigenvals[Spin.up] = self.eigvals[key].T
+            else:
+                pymat_projs[Spin.down] = temp_pyproj
+                eigenvals[Spin.down] = self.eigvals[key].T
+
+        from pymatgen.core.lattice  import Lattice
+        recip_lat = Lattice(self._b)
+        from pymatgen.core.structure import Structure
+        struc = Structure(self._a, self.elements, self.primAtoms)
+        kpt_labels = {} # no labels for uniform
+
+        from pymatgen.electronic_structure.bandstructure  import BandStructureSymmLine
+        cogito_proj_bs = BandStructureSymmLine(kpoints=self.kpoints,eigenvals = eigenvals,lattice=recip_lat,
+                                       efermi=(self.efermi+self.energy_shift),labels_dict=kpt_labels,
+                                       structure=struc,projections=pymat_projs)
+        return cogito_proj_bs
+
+
+    @staticmethod
+    def get_pymatgen_completedos(self, sigma: float=0.1, mulliken: bool=True):
+        """
+        This function will generate a pymatgen CompleteDos class object that is projected with the COGITO orbitals.
+    
+        Args:
+            self: COGITO_UNIFORM object
+            sigma (float): Sets the spread (in energy) of the gaussian for the each wavefunction COOP. The full pCOOP is created by summing the gaussians.
+                        This should trade off with k-point resolution. Low resolution requires high sigma (0.2) to smear between points. High resoltion can have low sigma (0.02).
+            mulliken (bool): Whether to do mulliken projection or onsite projection. For nonorthogonal basis, the sum of the onsite projection
+                        is <1 for bonding states and >1 (often by 2-5x) for antibonding states. 
+
+
+        Returns: pymatgen CompleteDos object
+
+        """
+
+        from pymatgen.electronic_structure.core import Spin
+
+
+        # make energies
+        shifted_energies = {}
+        all_shifted_ener = self.eigvals[:, :, :].flatten() - (self.efermi + self.energy_shift)
+        for key in self.keys:
+            shifted_energies[key] = self.eigvals[key, :, :].flatten() - (self.efermi + self.energy_shift)
+        all_shifted_ener = all_shifted_ener #[all_shifted_ener < ylim[1]]
+        minx = np.min(all_shifted_ener) - sigma * 2
+        maxx = np.max(all_shifted_ener)  # +sigma*2
+        points = int((maxx-minx)*50)
+        energies = np.linspace(minx, maxx, points)
+
+        allprojs = []
+        orb_projs = {}
+        all_projs = {}
+        for key in self.keys:
+            orb_projs[key] = {}
+            all_projs[key] = self.TB_model.get_orbprojs(self, spin=key,mulliken=mulliken)
+
+        pdoss = {}
+        for site in range(self.numAtoms):
+            pdoss[site] = {}
+
+        for orb in range(self.num_orbs):
+            #curorbdict = {elem:[orb]}
+            #orb_inds = COGITO_TB_Model.atmorb_dict_to_ind(self, curorbdict)
+
+            total_coop = {}
+            for key in self.keys:  # plot bands for each spin
+                projs = all_projs[key][:,:,orb]
+
+                flat_coop = projs.flatten()
+
+                # create the DOS by sum of gaussians
+                flat_coop = flat_coop #[shifted_energies[key] < ylim[1]]
+                use_energy = shifted_energies[key] #[shifted_energies[key] < ylim[1]]
+                sig = sigma  # 0.15#5/self.num_kpts**(1/2)
+                all_coop = 1 / (sig * (2 * np.pi) ** (1 / 2)) * np.exp(
+                    -1 / 2 * ((energies[:, None] - use_energy[None, :]) / sig) ** 2) * flat_coop[None,:]
+
+                if key == 0 or key == '0':
+                    total_coop[Spin.up] = np.sum(all_coop, axis=1)
+                else:
+                    total_coop[Spin.down] = np.sum(all_coop, axis=1)
+            site = self.orbatomnum[orb]
+            orbnum = self.sph_harm_key[orb]
+            pdoss[site][orbnum] = total_coop
+
+        # calculate the total dos
+        allatmDOS = {}
+        for key in self.keys:  # plot bands for each spin
+            flat_coop = np.ones(len(self.eigvals[key][:, :].flatten()))/self.num_kpts
+
+            # create the DOS by sum of gaussians
+            flat_coop = flat_coop #[shifted_energies[key] < ylim[1]]
+            use_energy = shifted_energies[key] #[shifted_energies[key] < ylim[1]]
+            sig = sigma  # 0.15#5/self.num_kpts**(1/2)
+            all_coop = 1 / (sig * (2 * np.pi) ** (1 / 2)) * np.exp(
+                -1 / 2 * ((energies[:, None] - use_energy[None, :]) / sig) ** 2) * flat_coop[None,:]
+
+            if key == 0 or key == '0':
+                allatmDOS[Spin.up] = np.sum(all_coop, axis=1)
+            else:
+                allatmDOS[Spin.down] = np.sum(all_coop, axis=1)
+
+        from pymatgen.core.structure import Structure
+        struc = Structure(self._a, self.elements, self.primAtoms)
+
+        from pymatgen.electronic_structure.dos  import Dos, CompleteDos
+        total_dos = Dos(efermi=0.0,energies=energies,densities=allatmDOS)
+
+        cogito_proj_dos = CompleteDos(structure=struc,total_dos = total_dos, pdoss=pdoss)
+
+        return cogito_proj_dos
+
+
+    # Functions below are mostly still qualify as a @staticmethod.
+    # But since they have attribute exists or generate checks and are generally more complicating, I am not switching them for now.
 
     def make_bond(self,atmind1,atmind2,center1,center2,orbCOOP,cartXYZ):
         """
@@ -3194,733 +3537,6 @@ class COGITO_UNIFORM(object):
                     #print("bond min max:",np.amin(bond_density),np.amax(bond_density))
 
         return bond_density
-
-    def get_bonds_figure(self, energy_cutoff: float = 0.1, bond_max: float = 3.0, elem_colors: list = [], atom_colors: list = [], atom_labels: list = [], plot_atom: int = None,
-                         one_atom: bool = False, fovy: float = 10,return_fig: bool = False) -> None:
-        """
-        This is deprecated.
-        This will plot the crystal structure atoms with line weighted by iCOHP.
-        Each line should also be hoverable to reveal the number and amounts that are s-s,s-p, and p-p.
-
-        Args:    
-            energy_cutoff (float): This is the minimum bond magnitude that will be plotted.
-            bond_max (float): The maximum bond distance that will be plotted outside the primitive cell.
-            elem_colors (list): Colors for the elements based on order in tb_input. Length of list should be the number of
-                        unique elements. Can either be integer list to reference the default colors or list of
-                        plotly compatable colors.
-            atom_colors (list): Colors for the atoms based on order in tb_input. Length of list should be the number of
-                        atoms in the primitive cell. Can either be integer list to reference the default colors or
-                        list of plotly compatable colors. If not set defaults to elem_colors.
-            atom_labels (list): List of atom labels as a string.
-            plot_atom (int): Set with one_atom=True, plots only one atom and it's bonds, this passes the atom number to plot.
-            one_atom (bool): Whether only the atom defined in plot_atom should be plotted; default is False.
-            fovy (float): field of view in the vertical direction. Use this tag to adjust depth perception in crystal.
-                        Set between 3 (for close to orthographic) and 30 (for good perspective depth).
-            return_fig (bool): If False, this function saves figure to crystal_bonds.html. If True, this function will return the plotly figure object.
-
-        Returns:    
-            html: Saves the crystal bond plot to (self.directory + "crystal_bonds.html"). Also plots figure if self.show_figs = True.
-        """
-        import plotly.graph_objs as go
-        if not hasattr(self, 'NN_index'):
-            self.get_neighbors()
-        # atom size based on element
-        all_atom_rad = {"H": 0.53, "He": 0.31, "Li": 1.51, "Be": 1.12, "B": 0.87, "C": 0.67, "N": 0.56, "O": 0.48,
-                        "F": 0.42, "Ne": 0.38,
-                        "Na": 1.90, "Mg": 1.45, "Al": 1.18, "Si": 1.11, "P": 0.98, "S": 0.88, "Cl": 0.79, "Ar": 0.71,
-                        "K": 2.43, "Ca": 1.94, "Sc": 1.84, "Ti": 1.76, "V": 1.71, "Cr": 1.66, "Mn": 1.61, "Fe": 1.56,
-                        "Co": 1.52,
-                        "Ni": 1.49, "Cu": 1.45, "Zn": 1.42, "Ga": 1.36, "Ge": 1.25, "As": 1.14, "Se": 1.03, "Br": 0.94,
-                        "Kr": 0.88,
-                        "Rb": 2.65, "Sr": 2.19, "Y": 2.12, "Zr": 2.06, "Nb": 1.98, "Mo": 1.90, "Tc": 1.83, "Ru": 1.78,
-                        "Rh": 1.73,
-                        "Pd": 1.69, "Ag": 1.65, "Cd": 1.61, "In": 1.56, "Sn": 1.45, "Sb": 1.33, "Te": 1.23, "I": 1.15,
-                        "Xe": 1.08,
-                        "Cs": 2.98, "Ba": 2.53, "Lu": 2.17, "Hf": 2.08, "Ta": 2.00, "W": 1.93, "Re": 1.88, "Os": 1.85,
-                        "Ir": 1.80,
-                        "Pt": 1.77, "Au": 1.75, "Hg": 1.71, "Tl": 1.56, "Pb": 1.54, "Bi": 1.43, "Po": 1.35, "At": 1.27,
-                        "Rn": 1.20,
-                        "La": 1.70,
-                        "Ce": 1.70,}
-
-        # get the cohp
-        if not hasattr(self, 'ICOHP'):
-            self.get_ICOHP()
-        icohp_orb = self.ICOHP
-        # each_dir = np.array([1, 1, 1]) #self.num_each_dir
-        cell = self.ICO_trans  # np.array(self.num_trans) # each_dir * 2 + 1
-        vec_to_trans = np.zeros((cell[0], cell[1], cell[2], 3))  # self.vec_to_trans
-        each_dir = self.ICO_eachdir  # self.num_each_dir
-
-        for x in range(cell[0]):
-            for y in range(cell[1]):
-                for z in range(cell[2]):
-                    vec_to_trans[x, y, z] = [x - each_dir[0], y - each_dir[1], z - each_dir[2]]
-
-        num_total_atoms = self.numAtoms * cell[0] * cell[1] * cell[2]
-        vec_to_atoms = vec_to_trans[None, :, :, :] + np.array(self.primAtoms)[:, None, None, None]
-        vec_to_atoms = np.reshape(vec_to_atoms, (num_total_atoms, 3)).T
-        # print(vec_to_atoms)
-        cart_to_atoms = _red_to_cart((self._a[0], self._a[1], self._a[2]), vec_to_atoms.transpose()).T
-
-        # plot the atoms onto the crystal
-        x_data = cart_to_atoms[0]
-        y_data = cart_to_atoms[1]
-        z_data = cart_to_atoms[2]
-        abc_data = vec_to_atoms
-        # crystal = go.Scatter3d(x=x_data,y=y_data,z=z_data,mode='markers',marker=dict(size=20,color='blue',opacity=0.8),hoverinfo='none')
-        if self.spin_polar:
-            keys = [0, 1]
-        else:
-            keys = [0]
-
-        all_bonds_spin = {}
-        bonds_spin = {}
-        for key in keys:
-            '''
-            cohp[key] = np.zeros((self.num_kpts, self.num_orbs, self.num_orbs, cell[0], cell[1], cell[2]),
-                            dtype=np.complex128)  # kpts,orb1,orb2,T1,T2,T3
-            # get it from TB params so have all except orbital energies
-            vecs = np.array(vec_to_trans)  # this will align different with the TB_params!!
-            orb_pos = np.array(self.orb_redcoords)
-            param_dir = self.num_each_dir
-            energysum = 0
-            overlapsum = 0
-            for kind in range(self.num_kpts):
-                kpoint = self.kpoints[kind]
-                # now only use the indices that are short
-                vec_to_orbs = vecs[None, None, :, :, :] + orb_pos[None, :, None, None, None] - orb_pos[:, None, None, None,
-                                                                                               None]
-                hold_vecs = np.reshape(vec_to_orbs, (self.num_orbs * self.num_orbs * cell[0] * cell[1] * cell[2], 3))
-                exp_fac = np.exp(2j * np.pi * np.dot(kpoint, hold_vecs.T))
-                exp_fac = np.reshape(exp_fac, (self.num_orbs, self.num_orbs, cell[0], cell[1], cell[2]))
-
-                #scaledTB = self.TB_params[key][:, :, param_dir[0] - each_dir[0]:param_dir[0] + each_dir[0] + 1,
-                #           param_dir[1] - each_dir[1]:param_dir[1] + each_dir[1] + 1,
-                #           param_dir[2] - each_dir[2]:param_dir[2] + each_dir[2] + 1] * exp_fac
-                scaledTB = self.TB_params[key] * exp_fac
-
-                coeff = self.eigvecs[key][kind, :self.num_orbs].T  # [band, orb]
-                include_band = self.eigvals[key][kind, :].flatten() < self.efermi + self.energy_shift
-                count = np.zeros(self.num_orbs)
-                count[include_band] = 1
-                mult_coeff = np.conj(coeff)[:, :, None] * coeff[:, None, :] * count[:, None, None]  # band,orb1,orb2
-                sum_coeff = np.sum(mult_coeff, axis=0)
-                energyCont = scaledTB * sum_coeff[:, :, None, None,
-                                        None]  # np.conj(coeff)[:,full_ind[0]]*coeff[:,full_ind[1]] #[orb1,orb2,T1,T2,T3]
-                cohp[key][kind] = energyCont * self.kpt_weights[kind]
-
-
-            icohp_orb[key] = np.sum(cohp[key], axis=0).real  # [orb1,orb2,T1,T2,T3]
-            print(icohp_orb[key][:,:,each_dir[0],each_dir[1],each_dir[2]])
-            '''
-            icohp_orb[key] = icohp_orb[key].real  # self.TB_model.get_ICOHP(self,spin=key).real
-            # [s,p]*[s,p] = [s-s,s-p,p-s,p-p]
-            # [s,p] * [s,p,d] = [s-s,s-p,p-s,p-p,s-d,p-d]
-            icohp_atom = np.zeros((self.numAtoms, self.numAtoms, cell[0], cell[1], cell[2]))
-            ssbonds = np.zeros((self.numAtoms, self.numAtoms, cell[0], cell[1], cell[2]))
-            spbonds = np.zeros((self.numAtoms, self.numAtoms, cell[0], cell[1], cell[2]))
-            psbonds = np.zeros((self.numAtoms, self.numAtoms, cell[0], cell[1], cell[2]))
-            ppbonds = np.zeros((self.numAtoms, self.numAtoms, cell[0], cell[1], cell[2]))
-            sdbonds = np.zeros((self.numAtoms, self.numAtoms, cell[0], cell[1], cell[2]))
-            dsbonds = np.zeros((self.numAtoms, self.numAtoms, cell[0], cell[1], cell[2]))
-            pdbonds = np.zeros((self.numAtoms, self.numAtoms, cell[0], cell[1], cell[2]))
-            dpbonds = np.zeros((self.numAtoms, self.numAtoms, cell[0], cell[1], cell[2]))
-            ddbonds = np.zeros((self.numAtoms, self.numAtoms, cell[0], cell[1], cell[2]))
-            # add f orbs
-            sfbonds = np.zeros((self.numAtoms, self.numAtoms, cell[0], cell[1], cell[2]))
-            fsbonds = np.zeros((self.numAtoms, self.numAtoms, cell[0], cell[1], cell[2]))
-            pfbonds = np.zeros((self.numAtoms, self.numAtoms, cell[0], cell[1], cell[2]))
-            fpbonds = np.zeros((self.numAtoms, self.numAtoms, cell[0], cell[1], cell[2]))
-            dfbonds = np.zeros((self.numAtoms, self.numAtoms, cell[0], cell[1], cell[2]))
-            fdbonds = np.zeros((self.numAtoms, self.numAtoms, cell[0], cell[1], cell[2]))
-            ffbonds = np.zeros((self.numAtoms, self.numAtoms, cell[0], cell[1], cell[2]))
-            for atm1 in range(self.numAtoms):
-                for atm2 in range(self.numAtoms):
-                    orbs1 = np.arange(self.num_orbs)[self.orbatomnum == atm1]
-                    orbs2 = np.arange(self.num_orbs)[self.orbatomnum == atm2]
-                    sum_cohp = icohp_orb[key][orbs1, :][:, orbs2]
-                    orb_type1 = self.exactorbtype[orbs1]
-                    orb_type2 = self.exactorbtype[orbs2]
-                    # s-s
-                    is_s1 = []
-                    is_p1 = []
-                    is_d1 = []
-                    is_f1 = []
-                    for i in orb_type1:
-                        is_s1.append("s" in i)
-                        is_p1.append("p" in i)
-                        is_d1.append("d" in i)
-                        is_f1.append("f" in i)
-                    is_s2 = []
-                    is_p2 = []
-                    is_d2 = []
-                    is_f2 = []
-                    for i in orb_type2:
-                        is_s2.append("s" in i)
-                        is_p2.append("p" in i)
-                        is_d2.append("d" in i)
-                        is_f2.append("f" in i)
-                    sorbs1 = np.arange(len(orb_type1))[is_s1]
-                    porbs1 = np.arange(len(orb_type1))[is_p1]
-                    dorbs1 = np.arange(len(orb_type1))[is_d1]
-                    forbs1 = np.arange(len(orb_type1))[is_f1]
-                    sorbs2 = np.arange(len(orb_type2))[is_s2]
-                    porbs2 = np.arange(len(orb_type2))[is_p2]
-                    dorbs2 = np.arange(len(orb_type2))[is_d2]
-                    forbs2 = np.arange(len(orb_type2))[is_f2]
-
-                    ssbond = np.sum(sum_cohp[sorbs1, :][:, sorbs2], axis=(0, 1))
-                    spbond = np.sum(sum_cohp[sorbs1, :][:, porbs2], axis=(0, 1))
-                    psbond = np.sum(sum_cohp[porbs1, :][:, sorbs2], axis=(0, 1))
-                    ppbond = np.sum(sum_cohp[porbs1, :][:, porbs2], axis=(0, 1))
-                    sdbond = np.sum(sum_cohp[sorbs1, :][:, dorbs2], axis=(0, 1))
-                    dsbond = np.sum(sum_cohp[dorbs1, :][:, sorbs2], axis=(0, 1))
-                    pdbond = np.sum(sum_cohp[porbs1, :][:, dorbs2], axis=(0, 1))
-                    dpbond = np.sum(sum_cohp[dorbs1, :][:, porbs2], axis=(0, 1))
-                    ddbond = np.sum(sum_cohp[dorbs1, :][:, dorbs2], axis=(0, 1))
-                    # add f orbs
-                    sfbond = np.sum(sum_cohp[sorbs1, :][:, forbs2], axis=(0, 1))
-                    fsbond = np.sum(sum_cohp[forbs1, :][:, sorbs2], axis=(0, 1))
-                    pfbond = np.sum(sum_cohp[porbs1, :][:, forbs2], axis=(0, 1))
-                    fpbond = np.sum(sum_cohp[forbs1, :][:, porbs2], axis=(0, 1))
-                    dfbond = np.sum(sum_cohp[dorbs1, :][:, forbs2], axis=(0, 1))
-                    fdbond = np.sum(sum_cohp[forbs1, :][:, dorbs2], axis=(0, 1))
-                    ffbond = np.sum(sum_cohp[forbs1, :][:, forbs2], axis=(0, 1))
-
-                    icohp_atom[atm1, atm2] = np.sum(sum_cohp, axis=(0, 1))
-                    ssbonds[atm1, atm2] = ssbond
-                    spbonds[atm1, atm2] = spbond
-                    psbonds[atm1, atm2] = psbond
-                    ppbonds[atm1, atm2] = ppbond
-                    sdbonds[atm1, atm2] = sdbond
-                    dsbonds[atm1, atm2] = dsbond
-                    pdbonds[atm1, atm2] = pdbond
-                    dpbonds[atm1, atm2] = dpbond
-                    ddbonds[atm1, atm2] = ddbond
-                    # add f orbs
-                    sfbonds[atm1, atm2] = sfbond
-                    fsbonds[atm1, atm2] = fsbond
-                    pfbonds[atm1, atm2] = pfbond
-                    fpbonds[atm1, atm2] = fpbond
-                    dfbonds[atm1, atm2] = dfbond
-                    fdbonds[atm1, atm2] = fdbond
-                    ffbonds[atm1, atm2] = ffbond
-            #print(icohp_atom.shape)
-            # print("cohp!",icohp_atom)
-            bonds_spin[key] = icohp_atom.flatten()
-            ssbonds = ssbonds.flatten()
-            spbonds = spbonds.flatten()
-            psbonds = psbonds.flatten()
-            ppbonds = ppbonds.flatten()
-            sdbonds = sdbonds.flatten()
-            dsbonds = dsbonds.flatten()
-            pdbonds = pdbonds.flatten()
-            dpbonds = dpbonds.flatten()
-            ddbonds = ddbonds.flatten()
-            # add f orbs
-            sfbonds = sfbonds.flatten()
-            fsbonds = fsbonds.flatten()
-            pfbonds = pfbonds.flatten()
-            fpbonds = fpbonds.flatten()
-            dfbonds = dfbonds.flatten()
-            fdbonds = fdbonds.flatten()
-            ffbonds = ffbonds.flatten()
-            all_bonds_spin[key] = {}
-            all_bonds_spin[key]["ss"] = ssbonds
-            all_bonds_spin[key]["sp"] = spbonds
-            all_bonds_spin[key]["ps"] = psbonds
-            all_bonds_spin[key]["pp"] = ppbonds
-            all_bonds_spin[key]["sd"] = sdbonds
-            all_bonds_spin[key]["ds"] = dsbonds
-            all_bonds_spin[key]["pd"] = pdbonds
-            all_bonds_spin[key]["dp"] = dpbonds
-            all_bonds_spin[key]["dd"] = ddbonds
-            # add f orbs
-            all_bonds_spin[key]["sf"] = sfbonds
-            all_bonds_spin[key]["fs"] = fsbonds
-            all_bonds_spin[key]["pf"] = pfbonds
-            all_bonds_spin[key]["fp"] = fpbonds
-            all_bonds_spin[key]["df"] = pfbonds
-            all_bonds_spin[key]["fd"] = fdbonds
-            all_bonds_spin[key]["ff"] = ffbonds
-
-        # combine spin up and down or double energy
-        all_bonds = {}
-        if self.spin_polar:
-            bonds = bonds_spin[0] + bonds_spin[1]
-            for orbkey in ["ss", "sp", "ps", "pp", "sd", "ds", "pd", "dp", "dd","sf", "fs", "pf", "fp", "df", "fd", "ff"]: # add f orbs
-                all_bonds[orbkey] = all_bonds_spin[0][orbkey] + all_bonds_spin[1][orbkey]
-        else:
-            bonds = bonds_spin[0] * 2
-            for orbkey in ["ss", "sp", "ps", "pp", "sd", "ds", "pd", "dp", "dd","sf", "fs", "pf", "fp", "df", "fd", "ff"]: # add f orbs
-                all_bonds[orbkey] = all_bonds_spin[0][orbkey] * 2
-
-        # get vectors to bonds
-        num_bonds = len(bonds)
-        bond_indices = np.unravel_index(np.arange(num_bonds), (self.numAtoms, self.numAtoms, cell[0], cell[1], cell[2]))
-        is_onsite = (bond_indices[2] == each_dir[0]) & (bond_indices[3] == each_dir[1]) & (
-                bond_indices[4] == each_dir[2]) & (bond_indices[0] == bond_indices[1])
-        bonds[is_onsite] = 0
-        start_atom = [bond_indices[0], np.ones(num_bonds, dtype=np.int_) * each_dir[0],
-                      np.ones(num_bonds, dtype=np.int_) * each_dir[1], np.ones(num_bonds, dtype=np.int_) * each_dir[2]]
-        start_ind = np.ravel_multi_index(start_atom, (self.numAtoms, cell[0], cell[1], cell[2]))
-        end_atom = [bond_indices[1], bond_indices[2], bond_indices[3], bond_indices[4]]
-        end_ind = np.ravel_multi_index(end_atom, (self.numAtoms, cell[0], cell[1], cell[2]))
-        atom_indices = np.unravel_index(np.arange(num_total_atoms), (self.numAtoms, cell[0], cell[1], cell[2]))[0]
-        atom_elems = self.elements[atom_indices]
-        og_atom_labels = copy.deepcopy(atom_labels)
-        if atom_labels == []:
-            atom_labels = atom_elems
-        else:
-            atom_labels = atom_labels[atom_indices]
-        uniq_elem, atom_to_elem = np.unique(self.elements, return_inverse=True)
-        # print("atm to elem:",atom_to_elem)
-        # print(atom_to_elem[atom_indices])
-        if atom_colors == []:
-            if elem_colors == []:
-                colors = np.array(
-                    ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22',
-                     '#17becf', '#564580', '#B87333', '#63c433', '#db61ed', '#298ec4', '#db61ed'])
-                atm_colors = colors[atom_to_elem[atom_indices]]
-            elif type(elem_colors[0]) == int:
-                elem_colors = np.array(elem_colors)
-                colors = np.array(
-                    ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22',
-                     '#17becf', '#564580', '#B87333', '#63c433', '#db61ed', '#298ec4', '#db61ed'])
-                atm_colors = colors[elem_colors[atom_to_elem[atom_indices]]]
-            else:
-
-                elem_colors = np.array(elem_colors)
-                atm_colors = elem_colors[atom_to_elem[atom_indices]]
-        elif type(atom_colors[0]) == int:
-            atom_colors = np.array(atom_colors)
-            colors = np.array(
-                ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22',
-                 '#17becf', '#564580', '#B87333', '#63c433', '#db61ed', '#298ec4', '#db61ed'])
-            atm_colors = colors[atom_colors[atom_indices]]
-        else:
-            atom_colors = np.array(atom_colors)
-            atm_colors = atom_colors[atom_indices]
-        atom_rad = []
-        for elem in atom_elems:
-            if elem in all_atom_rad.keys():
-                atom_rad.append(all_atom_rad[elem])
-            else:
-                atom_rad.append(1.3)
-        # colors = ["blue","green","orange","purple","red",
-        def cylinder_mesh(point1, point2, radius, resolution=20):
-            """
-            Create the coordinates of a cylinder mesh between two points.
-            Args:
-                point1 (array-like): [x, y, z] coordinates of one end of the cylinder.
-                point2 (array-like): [x, y, z] coordinates of the other end of the cylinder.
-                radius (float): Radius of the cylinder.
-                resolution (int): Number of segments along the circle.
-
-            Returns:    
-                (x, y, z): Mesh coordinates for the cylinder.
-            """
-            # Vector along the cylinder's axis
-            v = np.array(point2) - np.array(point1)
-            v = v / np.linalg.norm(v)  # Normalize the vector
-
-            # Create a perpendicular vector
-
-            # Choose an arbitrary vector not parallel to v
-            if abs(v[0]) < 1e-8 and abs(v[1]) < 1e-8:
-                # v is approximately along z-axis
-                not_v = np.array([1, 0, 0])
-            else:
-                not_v = np.array([0, 0, 1])
-            n1 = np.cross(v, not_v)
-            n1 /= np.linalg.norm(n1)
-            n2 = np.cross(v, n1)
-
-            # Generate points around a circle at the base of the cylinder
-            t = np.linspace(0, 2 * np.pi, resolution)
-            circle = np.array([radius * np.cos(t), radius * np.sin(t)])  # Circle coordinates
-
-            # Mesh points along the cylinder's axis
-            X, Y, Z = [], [], []
-            for i in [0, 1]:  # Iterate over start and end of the cylinder
-                point = point1 if i == 0 else point2
-                x = point[0] + circle[0] * n1[0] + circle[1] * n2[0]
-                y = point[1] + circle[0] * n1[1] + circle[1] * n2[1]
-                z = point[2] + circle[0] * n1[2] + circle[1] * n2[2]
-                X.append(x), Y.append(y), Z.append(z)
-
-            return np.concatenate(X), np.concatenate(Y), np.concatenate(Z)
-
-        def midsection_hover_points(point1, point2, radius, resolution=20):
-            """
-            Generate hover points along the midsection of the cylinder.
-            Args:
-                point1, point2: Start and end points of the cylinder.
-                radius: Radius of the cylinder.
-                resolution: Number of points along the circle.
-
-            Returns:    
-                (x, y, z, text): Coordinates and hover labels for the midsection points.
-            """
-            # Calculate the midpoint of the cylinder
-            midpoint = (np.array(point1) + np.array(point2)) / 2
-
-            # Vector along the cylinder's axis
-            v = np.array(point2) - np.array(point1)
-            v = v / np.linalg.norm(v)  # Normalize the vector
-
-            # Create two perpendicular vectors
-            if abs(v[0]) < 1e-8 and abs(v[1]) < 1e-8:
-                # v is approximately along z-axis
-                not_v = np.array([1, 0, 0])
-            else:
-                not_v = np.array([0, 0, 1])
-            n1 = np.cross(v, not_v) / np.linalg.norm(np.cross(v, not_v))
-            n2 = np.cross(v, n1)
-
-            # Generate points around the circle at the midpoint
-            t = np.linspace(0, 2 * np.pi, resolution)
-            x = midpoint[0] + radius * np.cos(t) * n1[0] + radius * np.sin(t) * n2[0]
-            y = midpoint[1] + radius * np.cos(t) * n1[1] + radius * np.sin(t) * n2[1]
-            z = midpoint[2] + radius * np.cos(t) * n1[2] + radius * np.sin(t) * n2[2]
-
-            return x, y, z
-
-        # plot the bond lines
-        # Create connecting lines trace
-        data = []
-        all_start_atms = np.array([[10,10,10]])
-        all_end_atms = np.array([[10,10,10]])
-        all_centers = np.array([[10,10,10]])
-        all_text = []
-        all_colors = []
-        all_energies = []
-        all_styles = []
-        all_atmrads = []
-        all_atm_elems = []
-        all_atm_labels = []
-        for b_ind in range(num_bonds):
-            bond_energy = bonds[b_ind]
-            if bond_energy < 0:
-                style = "solid"
-            else:
-                style = "dash"
-            if abs(bond_energy) > energy_cutoff:
-                start = start_ind[b_ind]
-                end = end_ind[b_ind]
-                ogstart_atm = np.array([x_data[start], y_data[start], z_data[start]])
-                ogend_atm = np.array([x_data[end], y_data[end], z_data[end]])
-                # place atoms also on 1 when start atm is at 0
-                trans = np.array([[0, 0, 0]])
-                hold_atm = np.around(abc_data[:, start], decimals=3)  # start atm in primitive coordinates
-                abc = np.linalg.norm(self._a, axis=1)
-                # print(hold_atm,hold_atm==0)
-                if (hold_atm == 0).any():
-                    for vectoswitch in np.arange(3)[hold_atm == 0]:  # (hold_atm==0).any():
-                        if abc[vectoswitch] < 4 * (
-                                np.sum(abc) - abc[vectoswitch]) / 2:  # aviod 2D cases with lots of vacuum
-                            # vectoswitch = np.arange(3)[hold_atm==0][0]
-                            switch = np.zeros(3)
-                            switch[vectoswitch] = 1
-                            new_trans = trans[:, :] + switch[None, :]
-                            trans = np.append(trans, new_trans, axis=0)
-                cart_trans = _red_to_cart((self._a[0], self._a[1], self._a[2]), trans)
-                # print(cart_trans)
-                for ti, tran in enumerate(cart_trans):
-                    start_atm = ogstart_atm + tran
-                    end_atm = ogend_atm + tran
-                    prim_startatm = abc_data[:, start] + trans[ti]
-                    plot = True
-                    if one_atom == True:
-                        if (np.abs((prim_startatm - self.primAtoms[plot_atom])) > 0.01).any():
-                            plot = False
-                    if plot == True:
-                        prim_endatm = abc_data[:, end] + trans[ti]
-                        abc = np.linalg.norm(self._a, axis=1)
-                        dist = copy.deepcopy(prim_endatm)
-                        dist[prim_endatm >= 0] = 0  # only keep negative values
-                        dist[prim_endatm > 1] = prim_endatm[prim_endatm > 1] - 1
-                        weighted_dist = np.abs(dist) * abc
-                        bond_dist = np.linalg.norm(end_atm - start_atm)
-                        # print(start_atm,end_atm, (weighted_dist < 0.1).all(), bond_dist < bond_max)
-                        # first check
-                        is_new_bond = False
-                        if (weighted_dist < 0.1).all() or bond_dist < bond_max:
-                            is_new_bond = True
-                            # check whether another bond already exists with the same end points
-                            same_start = (all_start_atms[:,0]==start_atm[0]) & (all_start_atms[:,1]==start_atm[1]) & (all_start_atms[:,2]==start_atm[2])
-                            check_end_atm = all_end_atms[same_start]
-                            same_end = ((check_end_atm[:,0]==end_atm[0]) & (check_end_atm[:,1]==end_atm[1]) & (check_end_atm[:,2]==end_atm[2])).any()
-                            if same_end == False: # also check for opposite
-                                same_start = (all_start_atms[:, 0] == end_atm[0]) & (
-                                            all_start_atms[:, 1] == end_atm[1]) & (
-                                                         all_start_atms[:, 2] == end_atm[2])
-                                check_end_atm = all_end_atms[same_start]
-                                same_end = ((check_end_atm[:, 0] == start_atm[0]) & (
-                                            check_end_atm[:, 1] == start_atm[1]) & (
-                                                        check_end_atm[:, 2] == start_atm[2])).any()
-                            if same_end:
-                                if self.verbose > 1:
-                                    print("avoided duplicate!")
-                            is_new_bond = not same_end
-
-                        if is_new_bond:
-                            all_start_atms = np.append(all_start_atms,np.array([start_atm]),axis=0)
-                            all_end_atms = np.append(all_end_atms,np.array([end_atm]),axis=0)
-                            # print("got new trans:",trans)
-                            NN = np.arange(len(self.NN_dists))[
-                                np.argmin(np.abs(self.NN_dists - bond_dist))]  # <= 0.0001][0]
-                            centerx = (start_atm[0] + end_atm[0]) / 2
-                            centery = (start_atm[1] + end_atm[1]) / 2
-                            centerz = (start_atm[2] + end_atm[2]) / 2
-                            orbs = ["s", "p", "d", "f"]
-                            bond_label = ""
-                            for orb1 in orbs:
-                                for orb2 in orbs:
-                                    bond_eng = all_bonds[orb1 + orb2][b_ind]
-                                    if np.abs(bond_eng) > np.abs(bond_energy) / 10:
-                                        bond_str = atom_elems[start] + " " + orb1 + " - " + atom_elems[
-                                            end] + " " + orb2 + ": " + str(
-                                            np.around(bond_eng, decimals=3)) + " eV" + "<br>"
-                                        bond_label += bond_str
-                            spin_label = ""
-                            if self.spin_polar:
-                                spin_label += "<br>Energy from spin up: " + str(
-                                    np.around(bonds_spin[0][b_ind], decimals=3)) + " eV"
-                                spin_label += "<br>Energy from spin down: " + str(
-                                    np.around(bonds_spin[1][b_ind], decimals=3)) + " eV"
-                            full_text = ("Bond energy: " + str(
-                                np.around(bond_energy, decimals=3)) + " eV" + "<br>Bond length: "
-                                         + str(np.around(bond_dist, decimals=3)) + " Å" + " (" + str(NN) + "NN)" +
-                                         spin_label + "<br>Breakdown into orbitals: <br>" + bond_label)
-                            all_atm_elems.append([atom_elems[start],atom_elems[end]])
-                            all_atm_labels.append([atom_labels[start],atom_labels[end]])
-                            '''
-                            data.append(go.Scatter3d(
-                                x=[centerx],
-                                y=[centery],
-                                z=[centerz],
-                                mode='markers',
-                                marker=dict(size=20, color='rgba(0,0,0,0)', opacity=0.),
-                                hoverinfo="text",
-                                hoverlabel=dict(bgcolor='ghostwhite',
-                                                font=dict(family='Arial', size=12, color='black')),
-                                text=full_text, showlegend=False
-                            ))
-                            '''
-                            start_rad = atom_rad[start]
-                            end_rad = atom_rad[end]
-                            all_colors.append([atm_colors[start], atm_colors[end]])
-                            all_energies.append(bond_energy)
-                            all_styles.append(style)
-                            all_atmrads.append([start_rad, end_rad])
-                            if style == 'dash':
-                                all_centers = np.append(all_centers,np.array([[centerx,centery,centerz]]),axis=0)
-                                all_text.append(full_text)
-                                data.append(go.Scatter3d(
-                                    x=[start_atm[0], end_atm[0]],
-                                    y=[start_atm[1], end_atm[1]],
-                                    z=[start_atm[2], end_atm[2]],
-                                    mode='lines',#'markers+lines',
-                                    #marker=dict(size=[start_rad * 40, end_rad * 40],
-                                    #            color=[atm_colors[start], atm_colors[end]], opacity=1.0,
-                                    #            line=dict(color='black', width=20)),
-                                    line=dict(
-                                        color='gray',
-                                        width=abs(bond_energy/2) ** (1 / 2) * 20,
-                                        dash=style
-                                    ),
-                                    #hoverinfo="text",
-                                    #hoverlabel=dict(bgcolor='ghostwhite',
-                                    #                font=dict(family='Arial', size=12, color='black')),
-                                    #text=full_text,
-                                    hoverinfo='none',
-                                    showlegend=False))
-                            else:
-                                # Get the mesh coordinates for the cylinder
-                                radius = abs(bond_energy/2) ** (1 / 2) / 8
-                                x, y, z = cylinder_mesh(start_atm, end_atm, radius,resolution=15)
-
-                                # Plot the cylinder using Plotly Mesh3d
-                                data.append(go.Mesh3d(
-                                    x=x, y=y, z=z,
-                                    opacity=1.0,
-                                    color='gray',
-                                    flatshading=False,  # Smooth shading
-                                    lighting=dict(
-                                        ambient=0.6,  # Ambient light (general light)
-                                        diffuse=0.7,  # Diffuse light (soft shadows)
-                                        fresnel=0.1,  # Reflective edges
-                                        specular=0.9,  # Specular reflection (sharp highlights)
-                                        roughness=0.55,  # Surface roughness
-                                    ),
-                                    lightposition=dict(
-                                        x=10, y=10, z=10  # Light source position
-                                    ),
-                                    hoverinfo="none",
-                                    #hoverlabel=dict(bgcolor='ghostwhite',
-                                    #                font=dict(family='Arial', size=12, color='black')),
-                                    #text=full_text,
-                                    alphahull=0
-                                ))
-
-                                # plot center cross-section for hover labels
-                                # Get hover points along the midsection circle
-                                hover_x, hover_y, hover_z = midsection_hover_points(start_atm, end_atm, radius)
-                                # Create hover points using Scatter3d
-                                data.append(go.Scatter3d(
-                                    x=hover_x, y=hover_y, z=hover_z,
-                                    mode='markers',
-                                    marker=dict(size=20, color='rgba(0,0,0,0)', opacity=0.),
-                                    hoverinfo="text",
-                                    hoverlabel=dict(bgcolor='ghostwhite',
-                                                    font=dict(family='Arial', size=12, color='black')),
-                                    text=full_text, showlegend=False
-                                ))
-
-        #print(all_end_atms.shape,all_start_atms.shape)
-        # find all unique atoms
-        combnd_atms = np.append(all_start_atms[1:],all_end_atms[1:],axis=0)
-        all_colors = np.array(all_colors)
-        all_atmrads = np.array(all_atmrads)
-        all_atm_elems = np.array(all_atm_elems)
-        all_atm_labels = np.array(all_atm_labels)
-        combnd_colors = np.append(all_colors[:,0],all_colors[:,1])
-        combnd_atmrad = np.append(all_atmrads[:,0],all_atmrads[:,1])
-        combnd_elems = np.append(all_atm_elems[:,0],all_atm_elems[:,1])
-        combnd_labels = np.append(all_atm_labels[:,0],all_atm_labels[:,1])
-        uniq_atms,indices = np.unique(combnd_atms,axis=0,return_index=True)
-        uniq_colors = combnd_colors[indices]
-        uniq_rad = combnd_atmrad[indices]
-        uniq_elems = combnd_elems[indices]
-        uniq_labels = combnd_labels[indices]
-        if self.verbose > 1:
-            print("all atms:",uniq_atms)
-            print(uniq_rad)
-            print(uniq_colors)
-
-        # append the bond labels
-        all_centers = all_centers[1:]
-        data.append(go.Scatter3d(
-            x=all_centers[:,0],
-            y=all_centers[:,1],
-            z=all_centers[:,2],
-            mode='markers',
-            marker=dict(size=20, color='rgba(0,0,0,0)', opacity=0.),
-            hoverinfo="text",
-            hoverlabel=dict(bgcolor='ghostwhite',
-                            font=dict(family='Arial', size=12, color='black')),
-            text=all_text, showlegend=False))
-
-
-        def create_sphere(center, radius, resolution=15):
-            """
-            Generate the mesh coordinates for a sphere.
-            """
-            u = np.linspace(0, 2 * np.pi, resolution)
-            v = np.linspace(0, np.pi, resolution)
-            x = center[0] + radius * np.outer(np.cos(u), np.sin(v))
-            y = center[1] + radius * np.outer(np.sin(u), np.sin(v))
-            z = center[2] + radius * np.outer(np.ones(np.size(u)), np.cos(v))
-            return x.flatten(), y.flatten(), z.flatten()
-
-        # Loop over atoms to create a sphere for each atom
-        for ai,atm in enumerate(uniq_atms):
-            x, y, z = create_sphere(atm, uniq_rad[ai]**(0.8)/2)
-            trace = go.Mesh3d(
-                x=x, y=y, z=z,
-                color=uniq_colors[ai],
-                opacity=1.0,
-                lighting=dict(
-                    ambient=0.6,  # Ambient light (general light)
-                    diffuse=0.7,  # Diffuse light (soft shadows)
-                    fresnel=0.1,  # Reflective edges
-                    specular=0.9,  # Specular reflection (sharp highlights)
-                    roughness=0.55,  # Surface roughness
-                ),
-                lightposition=dict(
-                    x=10, y=10, z=10  # Light source position
-                ),
-                alphahull=0,  # Proper enclosure for the mesh
-                hoverinfo = "text",
-                #hoverlabel = dict(bgcolor='ghostwhite',
-                #                  font=dict(family='Arial', size=12, color='black')),
-                text = uniq_labels[ai], showlegend = False)
-
-            data.append(trace)
-
-        if one_atom == False:
-            # draw primitive cell # place atoms also on 1 when start atm is at 0
-            trans = np.array([[0, 0, 0]])
-            for vectoswitch in np.arange(3):  # (hold_atm==0).any():
-                if abc[vectoswitch] < 4 * (np.sum(abc) - abc[vectoswitch]) / 2:  # aviod 2D cases with lots of vacuum
-                    # vectoswitch = np.arange(3)[hold_atm==0][0]
-                    switch = np.zeros(3)
-                    switch[vectoswitch] = 1
-                    new_trans = trans[:, :] + switch[None, :]
-                    trans = np.append(trans, new_trans, axis=0)
-            num = len(trans)
-            start_points = trans[:, None, :] * np.ones((num, num, 3))
-            end_points = trans[None, :, :] * np.ones((num, num, 3))
-            all_vecs = end_points - start_points
-            norm = np.linalg.norm(all_vecs, axis=2)
-            start_points = np.reshape(start_points, (num ** 2, 3))[norm.flatten() == 1]
-            end_points = np.reshape(end_points, (num ** 2, 3))[norm.flatten() == 1]
-            final_ind = []
-            for veci in range(len(start_points)):
-                diff = end_points[veci] - start_points[veci]
-                if (diff >= 0).all():
-                    final_ind.append(veci)
-            final_ind = np.array(final_ind)
-
-            start_points = start_points[final_ind]
-            end_points = end_points[final_ind]
-            cart_start = _red_to_cart((self._a[0], self._a[1], self._a[2]), start_points)
-            cart_end = _red_to_cart((self._a[0], self._a[1], self._a[2]), end_points)
-
-            for i in range(len(start_points)):
-                start_atm = cart_start[i]
-                end_atm = cart_end[i]
-                data.append(go.Scatter3d(
-                    x=[start_atm[0], end_atm[0]],
-                    y=[start_atm[1], end_atm[1]],
-                    z=[start_atm[2], end_atm[2]],
-                    mode='lines',
-                    line=dict(
-                        color='black',
-                        width=2,
-                        dash="solid"
-                    ), hoverinfo='none', showlegend=False))
-
-
-        # Create figure
-        fig = go.Figure(data=data)
-
-        # update figure design
-        # fig.update_traces(hovertemplate=None)
-        fig.update_layout(hoverdistance=100, margin=dict(l=0, r=0, b=0, t=0),
-                          paper_bgcolor='rgba(0,0,0,0)',  # Transparent background for the whole figure
-                          plot_bgcolor='rgba(0,0,0,0)')  # ,hovermode="x unified")
-        fig.update_layout(
-            scene=dict(xaxis=dict(showbackground=False, showspikes=False, showticklabels=False, visible=False),
-                       yaxis=dict(showbackground=False, showspikes=False, showticklabels=False, visible=False),
-                       zaxis=dict(showbackground=False, showspikes=False, showticklabels=False, visible=False),
-                       aspectmode='data'))
-
-        #fig.layout.scene.camera.projection.type = "orthographic"
-        # Set layout with camera and FOV (fovy)
-        fig.update_layout(scene_camera=dict(eye=dict(x=1.25,y=-0.05,z=0.05)))
-
-        fov = fovy
-        dist = np.around(75/fov,decimals=2)
-        post_script = ("const plot = document.querySelector('.js-plotly-plot'); const scene = plot._fullLayout.scene._scene;"
-                   " const camera = scene.glplot; camera.fovy ="+str(fov)+" * Math.PI / 180;  scene.camera.distance ="+str(dist)+";  "
-                       "console.log(`Updated FOV to ${camera.fovy} radians.`);")
-        fig.write_html(self.directory + "crystal_bonds.html",post_script=post_script)
-
-        if self.show_figs:
-            fig.show(post_script=post_script)
 
     def get_bonds_charge_figure(self, energy_cutoff: float = 0.1, bond_max: float = 3.0, elem_colors: list = [], atom_colors: list = [], atom_labels: list = [],
                                 auto_label: str = "", plot_atom: int = None,
@@ -7208,71 +6824,6 @@ class COGITO_UNIFORM(object):
         with open(self.directory+'bond_cohp_plot.html', 'w') as f:
             f.write(modified_html_str)
 
-    @staticmethod
-    def get_mulliken_charge(self: object,elem: str, only_onsite=False) -> float:
-        """
-        Returns the atomic partial charge by Mulliken partitioning. If the calculation is spin polarized, also returns the atomic magnetization by Mulliken.
-        If the element label (str) is used, the code returns the average charge/magnetization for the element type.
-
-        Args:
-            elem (str or int): Either the element label (e.g. "Pb") or the index of the atom in the list of atoms (as seen in tb_input.txt).
-                                When is the element label, the function will return a value for each atom of that type.
-            only_onsite (bool): Default False. If True, don't actually do the Mulliken repartitioning from bonds, only include onsite charges.
-                                Note if True: Summing only atoms with onsite charge will not be charge neutral, need to include bond charge for neutrality.
-
-        Returns:
-            (float or tuple): Atomic partial charge or if spin polarized, (partial charge, atomic magnetic moment).
-                              If elem is element label (e.g. "Pb"), returns a list for charge and magmom.
-        """
-        if not hasattr(self, 'ICOOP'):
-            self.get_ICOOP()
-        icoop_orb = self.ICOOP
-        each_dir = self.ICO_eachdir
-
-        # find the orbitals to use
-        atm_orbs = []
-        if type(elem) is str:
-            atm_nums = np.arange(len(self.elements))[self.elements == elem]
-            for atmnum in atm_nums:
-                numatmorbs = len(np.arange(self.num_orbs)[self.orbatomnum == atmnum])
-                atm_orbs.append(np.arange(self.num_orbs)[self.orbatomnum == atmnum])
-        else: # type is int
-            atm_nums = [elem]
-            for atmnum in atm_nums:
-                numatmorbs = len(np.arange(self.num_orbs)[self.orbatomnum == atmnum])
-                atm_orbs.append(np.arange(self.num_orbs)[self.orbatomnum == atmnum])
-        atm_orbs = np.array(atm_orbs)
-        icoop_orb = self.ICOOP
-        onsite_occup = np.zeros((len(self.keys),len(atm_nums), numatmorbs))
-        mulli_occup = np.zeros((len(self.keys),len(atm_nums), numatmorbs))
-        for key in self.keys:
-            for i in range(len(atm_nums)):
-                orbs = atm_orbs[i]
-                onsite_occup[key][i] = np.sum(icoop_orb[key][orbs][:,orbs,each_dir[0],each_dir[1],each_dir[2]], axis=1)
-                mulli_occup[key][i] = np.sum(icoop_orb[key][orbs], axis=(1, 2, 3, 4))
-        if only_onsite:
-            mulli_occup = onsite_occup
-
-        electron_occ = np.zeros(len(atm_nums))
-        for key in self.keys:
-            electron_mag = electron_occ - np.sum(mulli_occup[key],axis=1) # difference between spin = 0 and spin = 1
-            electron_occ = electron_occ +  np.sum(mulli_occup[key],axis=1)
-
-        if len(self.keys) == 1: # multiply by two for spin degeneracy
-            electron_occ = electron_occ*2
-            electron_mag[:] = 0 # no magnetism
-
-        if not (type(elem) is str): # not return a single value instead of a length 1 list
-            electron_occ = electron_occ[0]
-            electron_mag = electron_mag[0]
-
-        mulk_charge = np.around(self.elec_count[atm_nums[0]] - electron_occ,decimals=6).tolist()
-        electron_mag = np.around(electron_mag,decimals=6).tolist()
-
-        if len(self.keys) == 1:
-            return mulk_charge
-        else: # has spin and mag
-            return mulk_charge, electron_mag
 
 class COGITO_BS_widget(object): # ought to pass the class COGITO_TB_Model
     def __init__(self, TB_model: object, num_kpts: int = 100):
@@ -8491,6 +8042,107 @@ def complex128funs(phi,theta,sphharm_key):
             # m = +3: f_x(x2-3y2) -> cos(3*phi)
             key_set[6] * (35 / 32 / np.pi)**(1 / 2) * np.sin(theta)**3 * np.cos(3*phi))
         return orb
+
+def get_simple_fermi(shifted_energies, kpnt_coords, kpt_grid, e_cut: float = 0.0,b_vecs=np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]]), plot_iso=False):
+    """
+    This function returns k-point values for the surface constructed by the band energies at a given energy. Best to pass a uniform grid.
+    WARNING: This is a very simple function! The values returned are not neccessary in the best cell for visualization, etc.
+    For more advanced uses, I would recommend interfacing COGITO with IFermi.
+    Args:
+        shifted_energies (NDArray): The eigenvalues of one spin with respect to the Fermi energy. Of dimension [nkpt,nband].
+        kpnt_coords (NDArray): The reduced coordinates of the energies. Of dimension [nkpt,3].
+        e_cut (float): The energy of the band isosurface with represent to the Fermi energy.
+        b_vecs (NDArray): The reciprocal space vectors used to translate the isosurface back to cartesian coordinates if plotting.
+        plot_iso (float): Whether to plot an html pop-up using plotly of the isosurface.
+    Returns:
+
+    """
+
+    # select the band closest to the e_cut
+    shifted_evals = shifted_energies.T # self.eigvals[spin] - (self.efermi + self.energy_shift)
+    include_band = []
+    for band in range(len(shifted_evals)):
+        lower = (shifted_evals[band] - e_cut <= 0).any()
+        higher = (shifted_evals[band] - e_cut > 0).any()
+        if lower and higher: # band crosses e_cut
+            include_band.append(band)
+    if include_band == []:
+        print("ERROR!! The e_cut provided does not cross any bands!")
+    #check_band = [(shifted_evals - e_cut < 0), axis=0) < 1.0]
+    print("e_cut crosses the bands:", include_band)
+    check_evals = shifted_evals[include_band]
+
+    # sort the values correctly according to kpoint ordering (this might already be done...)
+    ind = np.lexsort((kpnt_coords[:, 0], kpnt_coords[:, 1], kpnt_coords[:, 2]))
+    #print("Check kpt ordering:", kpnt_coords, ind)
+    #print(kpnt_coords[ind, 0])
+    # print(ind.shape)
+    check_evals = check_evals[:,ind]
+    # get min values
+    delk = np.amin(kpnt_coords+1/2,axis=0)
+    #print(delk,kpt_grid)
+
+    # Plot the isosurface
+    #print("plotting vals:", e_cut)
+    #print("Orbital range:", check_evals.min(), check_evals.max())
+    data = []
+    grid = kpt_grid # self.kpt_grid
+
+    all_verts = []
+    all_faces = []
+    num_verts = 0
+    from skimage.measure import marching_cubes
+    import plotly.graph_objects as go
+
+    for band in check_evals:
+        try:
+            verts, faces, _, _ = marching_cubes(np.reshape(band, (grid[0], grid[1], grid[2])), e_cut,
+                                                spacing=(1 / grid[0], 1 / grid[1], 1 / grid[2]),allow_degenerate=False)
+            new_verts = (verts - 1 / 2) + delk # np.array([verts[:, 0], verts[:, 1], verts[:, 2]]).transpose()
+            all_verts.append(new_verts)
+            all_faces.append(faces+num_verts)
+            num_verts += len(new_verts)
+        except:
+            print("band did not cross range")
+
+    all_verts = np.array([x for xs in all_verts for x in xs])
+    all_faces = np.array([x for xs in all_faces for x in xs])
+    #print("fermi verts:", len(all_verts), all_verts)
+
+    # Step 4: Plot the isosurface using Plotly
+    if plot_iso:
+        cart_verts = _red_to_cart((b_vecs[0], b_vecs[1], b_vecs[2]), all_verts)
+        data = []
+        data.append(go.Mesh3d(
+            x=cart_verts[:, 0],
+            y=cart_verts[:, 1],
+            z=cart_verts[:, 2],
+            i=all_faces[:, 0],
+            j=all_faces[:, 1],
+            k=all_faces[:, 2],
+            opacity=0.5,
+            color='green',
+            colorscale='Viridis'
+        ))
+
+        fig = go.Figure(data=data)
+        fig.update_layout(margin=dict(l=0, r=0, b=0, t=0),
+                          paper_bgcolor='rgba(0,0,0,0)',  # Transparent background for the whole figure
+                          plot_bgcolor='rgba(0,0,0,0)')  # ,hovermode="x unified")
+        # Define the ranges for X, Y, Z axes
+        # x_range = [cartXYZ[0].min(), cartXYZ[0].max()]
+        # y_range = [cartXYZ[1].min(), cartXYZ[1].max()]
+        # z_range = [cartXYZ[2].min(), cartXYZ[2].max()]
+        # fig.update_layout(
+        #    scene=dict(xaxis=dict(showbackground=False, showspikes=False, showticklabels=False, visible=False),
+        #               yaxis=dict(showbackground=False, showspikes=False, showticklabels=False, visible=False),
+        #               zaxis=dict(showbackground=False, showspikes=False, showticklabels=False, visible=False),
+        #               aspectmode='data'))
+        fig.update_layout(title="Fermi Isosurface", scene=dict(aspectmode='data'))
+        fig.show()
+
+    return all_verts, all_faces
+
 
 def run_cogito_model(dir:str="./",tag:str="",eigfile:str="EIGENVAL",tb_file:str="TBparams",over_file:str="overlaps",
                      file_type: str="npy",save_quality_info:bool=True, show_figs:bool=True,
