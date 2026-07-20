@@ -18,7 +18,7 @@ import time
 from functools import partial
 import plotly.graph_objects as go
 
-dist_version = "0.3.2"
+dist_version = "0.3.3"
 
 # try parallelizing stuff
 import os
@@ -6965,7 +6965,7 @@ class COGITO(object):
         #print(self.num_kpts)
 
         if n_jobs is None:
-            n_jobs = get_slurm_njobs(default=1)
+            n_jobs = get_n_jobs(default=1)
 
         n_jobs = min(n_jobs, self.num_kpts)
 
