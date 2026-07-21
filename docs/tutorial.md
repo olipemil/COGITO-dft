@@ -101,7 +101,7 @@ A couple things to keep in mind for the VASP calculation:
 * Must be a static run (NSW=0)
 * Use an irreducible grid (ISYM=1,2,3)
 * Save the wavefunctions (LWAVE=True)
-* Use more bands (NBANDS=(8-16)*natoms)
+* Use more bands (NBANDS=(12-20)*natoms)
 * No spin-orbit coupling (LSORBIT=False, but magnetism is supported (ISPIN=2)
 
 <br>
@@ -132,7 +132,7 @@ run_cogito(directory=direct)
 
 ## Analyze quality of COGITO run
 
-Checkes if quality output files are within expected range. If not, suggests tag changes that could improve quality. Run after COGITOpost for feedback on band interpolation quality. For more details, see [COGITOanalyze files](file_struc.md#cogitoanalyze).
+Checkes if quality output files are within expected range. If not, suggests tag changes that could improve quality. Run after COGITOpost for feedback on band interpolation quality. The 'WARNING' tolerances are set low, so rerunning is often not neccessary. For "ERROR" messages follow advice and/or email Emily. For more details, see [COGITOanalyze files](file_struc.md#cogitoanalyze).
 
 ```{tab} bash (CLI)
 ~~~ bash
@@ -153,7 +153,7 @@ analyze_all(dir=direct)
 
 ## Study COGITO model
 
-To run the general model analysis:
+To run the general tight binding model analysis:
 
 ```{tab} bash (CLI)
 ~~~ bash
@@ -174,7 +174,7 @@ This general analysis can be broken into 4 parts: **1)** Create class and plot d
 
 For a better understanding of the structure of the data, review Section VI of the [COGITO manuscript](https://arxiv.org/pdf/2511.19725).
 
-These 4 parts can be customized with tags in command line interface or run in python individually, as reviewed below. 
+These 4 parts can be selected separately or customized with tags in command line interface or run in python individually, as reviewed below. 
 For more a detailed analysis on density of states (uniform k-grid) or band structue, see [below](tutorial.md#additional-analysis), explore [COGITOpost files](file_struc.md#cogitopost), or reference the API/source code.
 
 <br>
@@ -184,7 +184,7 @@ For more a detailed analysis on density of states (uniform k-grid) or band struc
 Now we can work with our COGITO tight binding model. The first step is to verify the quality of the COGITO TB model.
 
 ```{tab} python
-This code will need to be run before any use of the bandstructure or uniform classes.<br>
+Important! This code will need to be run before any use of the bandstructure or uniform classes.<br>
 
 ~~~ python
 from COGITO_dft.COGITOpost import COGITO_TB_Model as CoTB
@@ -217,7 +217,7 @@ Note: The overlap and hopping plots should show a rough linear decay
 
 ### 2) Compare COGITO band energies to DFT
 
-To verify the band interpolation of COGITO, the function 'compare_to_DFT' is used to determine the error between the interpolating COITO band energies and DFT band energies. The DFT energies are read from an EIGENVAL file from a VASP (band structure) calculation.
+To verify the band interpolation of COGITO, the function `compare_to_DFT` is used to determine the error between the interpolating COITO band energies and DFT band energies. The DFT energies are read from an EIGENVAL file from a VASP (band structure) calculation.
 
 ```{tab} bash (CLI)
 ~~~ bash
@@ -255,7 +255,7 @@ average error in Conduc Bands: 0.357561 eV
 
 ### 3) Generate atom and bond data
  
-By paritioning integrated values (like charge and band energy) into atom and bond contributions, we generate three json data files. These json files contain almost everything you may want to analyze! (Band structure or DOS analysis requires more effort.) 
+By paritioning integrated values (like charge and band energy) into atom and bond contributions, we generate three json data files. These json files contain almost everything you may want to analyze! (Band structure or DOS analysis requires additional effort, see below.)  To automatically visualize and interact with this atom and bond data, see Step 4!
 
 In the future, I will develop a more thorough tutorial of these files with examples of how to use them, but for now reference [COGITOpost files](file_struc.md#cogitopost), examine the files yourself, and email me (Emily) with any questions.
 
@@ -285,8 +285,10 @@ my_CoUN.jsonify_bonddata(minimum_cohp=min_cohp)
 
 ### 4) Create interactive visualization of quantum bonds!
 
-The accurate TB model from COGITO allows for calculation of COHP energies which accurately reflect the DFT energies.
-This can be used to confidently and precisely trace back the crystal covalent bonding.
+Because COGITO is atomic, adaptable to DFT, and accurate, we can calculate COHP energies that fully describe the DFT energies.
+This can be used to confidently and precisely trace the covalent bonding origins of compound stability.
+
+COGITO creates interactive html files to quickly study bonding data. In the plot below, the width of each bonds conveys the magnitude of the bond energy. Bonds are solid while antibonds are dashed. Hover over bonds to see orbital-decomposed COHP bond energies, bond charge, and bond magnetic moment. Hover over the atoms (in `get_bonds_charge_figure` versions) to see atom charge and magnetic moment.
 
 ```{tab} bash (CLI)
 ~~~ bash
@@ -309,16 +311,19 @@ my_CoUN.get_bonds_charge_figure(energy_cutoff=0.05, bond_max=3, auto_label="mull
     </div>
 </div>
 
+Want information on where the bonds are in electron energy space? Below is just that. Hover over a bond and the related bond COHP-projected density of states will appear on the right plot! The colors further breakdown the contribution of each orbital interactions across electron energy.
+
 ```{tab} bash (CLI)
-Note: It often good to set densify >1.0 for the COHP projected density of states plot.
+Note: It often good to set densify >1.0 for the COHP-projected density of states plot.
 ~~~ bash
 COGITOpost --dir "PbO/" --densify 1.5 --energy_cutoff 0.05 --bond_max 3 --auto_label 'full' --no_save_quality_info --no_save_crystal_bonds --no_save_ico
 ~~~
 ```
 
 ```{tab} python
+Note: It often good to set densify >1.0 for the COHP-projected density of states plot.
 ~~~ python
-# plot the crystal bonds plot with an interative projected COHP!
+# plot the crystal bonds plot with an interative  COHP-projected DOS!
 my_CoUN.get_crystal_plus_COHP(energy_cutoff=0.05, bond_max=3, auto_label="full")
 ~~~
 ```
@@ -333,12 +338,12 @@ my_CoUN.get_crystal_plus_COHP(energy_cutoff=0.05, bond_max=3, auto_label="full")
 
 ## Additional Analysis
 
+For specific queries on orbital-projected or orbital-interaction-projected density of states and band structure, COGITO provides several resources. Simple example of these are provides in the tutorials below. 
+
+**Extra info on code structure and variables:** The plotting or data-return functions in `COGITO_UNIFORM` and `COGITO_BAND` are based on either the `get_COHP` or `get_orbprojs` functions in `COGITO_TB_Model`. The orbital-interaction (COHP/COOP) functions require specifying two sets of orbitals and the distance of interaction between them. The function `filter_all_indices` returns all indices of the 5D matrices that is between an orbital in set 1 with an orbital in set 2 that also satisfy the nearest neighbor (`NN`) type (or newly, the `min_dist` and `max_dist`). The function `atmorb_dict_to_ind` returns the specific orbital indices that satisfy the flexible orbital dictionary passed to COHP/COOP/orbital-projected BS/DOS functions. For orbital-projected quantities, Mulliken population analysis can be used to resolve the inherit ambiguity in assigning two-center terms to one orbital.
+
 ### Orbital, COHP, or COOP projected DOS
-
-Because COGITO forms a nearly complete basis for the charge density, we can accurately determine the percent of each
-atomic orbital in the band wavefunction. Mulliken population analysis is used here to resolve the inherit ambiguity in assigning two-center terms to one orbital.
-
-The get_COHP function requires specifying two sets of orbitals. All bonds between an orbital in set 1 with an orbital in set 2 that also satisfy the nearest neighbor (NN) type are included in end COHP. The same function exists for COOP. 
+For a smoother DOS plot, increase densify (Note: nkpts and time scales cubically with densify) or increase sigma (can smear separate states together if too large).
 
 ```{tab} python
 ~~~ python
@@ -375,10 +380,10 @@ CoUN.get_COHP_DOS(my_CoUN, orbs_dict, NN='All')
 
 ### Generate and project on band structure
 
-This class generates the band structure for high symmetry path determined with pymatgen and seekpath. Importantly, this class
-requires an instance of the tight binding class in initialization.
+This class generates the band structure with a variety of options for specifying kpath, see [api for details](api/COGITOpost.md#COGITO_dft.COGITOpost.COGITO_BAND.get_bandstructure). (1) In only `line_density` is passed, the high symmetry path is determined with pymatgen and seekpath. (2) If `high_sym_kpnts` is passed, these k-points with `line_density` will be used to make the final k-points list (`high_sym_kpath` can optionally be passed). (3) If `all_kpts` is passed, this will be used as the final k-points list (`kpt_labels` can optionally be passed).
 
 ```{tab} python
+Note: This class requires an instance of the tight binding class to initialize.
 ~~~ python
 # ensure TB class object is made
 from COGITO_dft.COGITOpost import COGITO_TB_Model as CoTB
@@ -402,8 +407,7 @@ my_CoBS.plotBS() # or plotlyBS()
 </div>
 
 <span id="projectbs"></span>**Use COGITO for orbital projected band structure**<br>
-Because COGITO forms a nearly complete basis for the charge density, we can accurately determine the percent of each
-atomic orbital in the band wavefunction. Mulliken population analysis is used here to resolve the inherit ambiguity in assigning two-center terms to one orbital.
+Because COGITO forms a nearly complete basis for the DFT wavefunctions and the band structure below is directly from tight binding, the sum of projections is guaranteed to be 1! (That is, when Mulliken population analysis is used to resolve the inherit ambiguity in assigning two-center terms to one orbital. Otherwise, bond populations need to be included in the sum.)
 
 ```{tab} python
 ~~~ python
@@ -422,7 +426,7 @@ CoBS.plot_projectedBS(my_CoBS, {"Si":["s"]})
 The accurate TB model from COGITO allows for calculation of COHP energies which almost perfectly reflect the true DFT values.
 This can be used to confidently and precisely trace back the crystal chemical origins of electronic structure!
 
-Any COHP requires specifying two sets of orbitals. The bonds between any orbital in set 1 with any orbital in set 2 is included in end COHP.
+Any COHP requires specifying two sets of orbitals. The bonds between any orbital in set 1 with any orbital in set 2 at the defined distance apart is included in resulting COHP.
 
 ```{tab} python
 ~~~ python

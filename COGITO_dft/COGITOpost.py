@@ -1548,7 +1548,7 @@ class COGITO_TB_Model(object):
         Args:    
             self (object): An object of the class COGITO_BAND or COGITO_UNIFORM.
             orbs (dict): Either a list of two dictionaries giving elements (or site index) as keys and orbital types as items (eg [{"Pb":["s","d"],"O":["s","p"]},{"Pb":["s"]"O":["p"]}])
-            or give list of orb numbers [[1,2,3,5,6,7],[1,2,3,4,5,6,7,8]]. See atmorb_dict_to_ind() for more details.
+                        or give list of orb numbers [[1,2,3,5,6,7],[1,2,3,4,5,6,7,8]]. See atmorb_dict_to_ind() for more details.
             max_dist (float): The maximum distance to include. Default of None reverts to filtering based on 'NN'.
             min_dist (float): The minimum distance to include. Default of None sets to 0.0 (but to really include onsite terms, 'include_onsite' below must be set to True).
             NN (int): Alternative/old way to filtering distance terms. Is less robust because requires segmenting NNs.
@@ -1889,8 +1889,11 @@ class COGITO_BAND(object): # ought to pass the class COGITO_TB_Model
 
     def get_bandstructure(self, line_density: int = 20, high_sym_kpnts:dict = {}, high_sym_kpath:list=[], all_kpts:list=[[]],kpt_labels: list=[]) -> None:
         """
-        The function automatically generates a kpath using pymatgen and kpathseek.
-        Then calculates the band energies and vectors for the kpath.
+        This function generates the COGITO band structure with a variety of options for specifying kpath.
+        These options are:
+        (1) In only `line_density` is passed, the high symmetry path is determined with pymatgen and seekpath.
+        (2) If `high_sym_kpnts` is passed, these k-points with `line_density` will be used to make the final k-points list (`high_sym_kpath` can optionally be passed).
+        (3) If `all_kpts` is passed, this will be used as the final k-points list (`kpt_labels` can optionally be passed).
 
         Args:    
             line_density (int): The number of kpoints between EACH kpath.
@@ -2155,7 +2158,7 @@ class COGITO_BAND(object): # ought to pass the class COGITO_TB_Model
 
         Args:    
             orbs (dict): Either a list of two dictionaries giving elements as keys and orbital types as items (eg [{"Pb":["s","d"],"O":["s","p"]},{"Pb":["s"]"O":["p"]}])
-                        or give list of orb numbers [[1,2,3,5,6,7],[1,2,3,4,5,6,7,8]].See atmorb_dict_to_ind() for more details.
+                        or give list of orb numbers [[1,2,3,5,6,7],[1,2,3,4,5,6,7,8]]. See atmorb_dict_to_ind() for more details.
             max_dist (float): The maximum distance to include. Default of None reverts to filtering based on 'NN'.
             min_dist (float): The minimum distance to include. Default of None sets to 0.0 (but to really include onsite terms, 'include_onsite' below must be set to True).
             NN (int): Alternative/old way to filtering distance terms. Is less robust because requires segmenting NNs.
@@ -2188,8 +2191,8 @@ class COGITO_BAND(object): # ought to pass the class COGITO_TB_Model
         Calculates and plots the projected COOP values for each band and k-point on band structure.
 
         Args:    
-            orbs (dict): either a list of two dictionaries giving elements as keys and orbital types as items (eg [{"Pb":["s","d"],"O":["s","p"]},{"Pb":["s"]"O":["p"]}])
-            or give list of orb numbers [[1,2,3,5,6,7],[1,2,3,4,5,6,7,8]].See atmorb_dict_to_ind() for more details.
+            orbs (dict): Either a list of two dictionaries giving elements as keys and orbital types as items (eg [{"Pb":["s","d"],"O":["s","p"]},{"Pb":["s"]"O":["p"]}])
+                        or give list of orb numbers [[1,2,3,5,6,7],[1,2,3,4,5,6,7,8]]. See atmorb_dict_to_ind() for more details.
             max_dist (float): The maximum distance to include. Default of None reverts to filtering based on 'NN'.
             min_dist (float): The minimum distance to include. Default of None sets to 0.0 (but to really include onsite terms, 'include_onsite' below must be set to True).
             NN (int): Alternative/old way to filtering distance terms. Is less robust because requires segmenting NNs.
@@ -2880,7 +2883,7 @@ class COGITO_UNIFORM(object):
 
         Args:
             orbs (dict): Either a list of two dictionaries giving elements as keys and orbital types as items (eg [{"Pb":["s","d"],"O":["s","p"]},{"Pb":["s"]"O":["p"]}])
-            or give list of orb numbers [[1,2,3,5,6,7],[1,2,3,4,5,6,7,8]].See atmorb_dict_to_ind() for more details.
+                        or give list of orb numbers [[1,2,3,5,6,7],[1,2,3,4,5,6,7,8]].See atmorb_dict_to_ind() for more details.
             max_dist (float): The maximum distance to include. Default of None reverts to filtering based on 'NN'.
             min_dist (float): The minimum distance to include. Default of None sets to 0.0 (but to really include onsite terms, 'include_onsite' below must be set to True).
             NN (int): Alternative/old way to filtering distance terms. Is less robust because requires segmenting NNs.
@@ -3011,7 +3014,7 @@ class COGITO_UNIFORM(object):
 
         Args:
             orbs (dict): Either a list of two dictionaries giving elements as keys and orbital types as items (eg [{"Pb":["s","d"],"O":["s","p"]},{"Pb":["s"]"O":["p"]}])
-            or give list of orb numbers [[1,2,3,5,6,7],[1,2,3,4,5,6,7,8]].See atmorb_dict_to_ind() for more details.
+                        or give list of orb numbers [[1,2,3,5,6,7],[1,2,3,4,5,6,7,8]].See atmorb_dict_to_ind() for more details.
             max_dist (float): The maximum distance to include. Default of None reverts to filtering based on 'NN'.
             min_dist (float): The minimum distance to include. Default of None sets to 0.0 (but to really include onsite terms, 'include_onsite' below must be set to True).
             NN (int): Alternative/old way to filtering distance terms. Is less robust because requires segmenting NNs.
@@ -3318,7 +3321,7 @@ class COGITO_UNIFORM(object):
     def get_pymatgen_bandstruc(self, mulliken: bool=True):
         """
         This function will generate a pymatgen bandstructure class object that is projected with the COGITO orbitals.
-        
+
         Args:
             self: COGITO_UNIFORM object
             mulliken: Whether to do mulliken projection or onsite projection. For nonorthogonal basis, the sum of the onsite projection
