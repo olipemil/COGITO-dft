@@ -125,8 +125,8 @@ file_struc
 :hidden:
 api_ref
 api/COGITO
+api/COGITOpost
 api/COGITOanalyze
 api/COGITOico
-api/COGITOpost
 ```
 

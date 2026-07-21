@@ -338,7 +338,7 @@ my_CoUN.get_crystal_plus_COHP(energy_cutoff=0.05, bond_max=3, auto_label="full")
 
 ## Additional Analysis
 
-For specific queries on orbital-projected or orbital-interaction-projected density of states and band structure, COGITO provides several resources. Simple example of these are provides in the tutorials below. 
+For specific queries on orbital-projected or orbital-interaction-projected density of states and band structure, COGITO provides several resources. Simple examples of these are in the tutorials below. 
 
 **Extra info on code structure and variables:** The plotting or data-return functions in `COGITO_UNIFORM` and `COGITO_BAND` are based on either the `get_COHP` or `get_orbprojs` functions in `COGITO_TB_Model`. The orbital-interaction (COHP/COOP) functions require specifying two sets of orbitals and the distance of interaction between them. The function `filter_all_indices` returns all indices of the 5D matrices that is between an orbital in set 1 with an orbital in set 2 that also satisfy the nearest neighbor (`NN`) type (or newly, the `min_dist` and `max_dist`). The function `atmorb_dict_to_ind` returns the specific orbital indices that satisfy the flexible orbital dictionary passed to COHP/COOP/orbital-projected BS/DOS functions. For orbital-projected quantities, Mulliken population analysis can be used to resolve the inherit ambiguity in assigning two-center terms to one orbital.
 
