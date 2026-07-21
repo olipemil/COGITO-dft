@@ -18,7 +18,7 @@ import time
 from functools import partial
 import plotly.graph_objects as go
 
-dist_version = "0.3.3"
+dist_version = "0.3.4"
 
 # try parallelizing stuff
 import os
@@ -576,7 +576,7 @@ class COGITO(object):
                             print(
                                 "         This is because in expand_irred_kgrid() the orbital overlaps are set by the coefficients.")
                         self.optimize_band_set(band_opt=band_opt, orb_opt=orb_opt,
-                                               orb_orth=orb_orth)  # doing before expand grid definitely needs orb_opt=True!!!
+                                               orb_orth=orb_orth, en_cut_low=0.0,en_cut_high=3.0)  # doing before expand grid definitely needs orb_opt=True!!!
 
                     wan_orbs, prim_wangrid = self.make_irred_wannier()
                     time2 = time.time()
@@ -5028,7 +5028,7 @@ class COGITO(object):
             'nme':nme,
         }
 
-    def optimize_band_set(self,band_opt=True,orb_opt=True,orb_orth=False):
+    def optimize_band_set(self,band_opt=True,orb_opt=True,orb_orth=False, en_cut_low:float=2.0, en_cut_high:float=5.0):
         """
         This funciton refines the orbital coefficients for perfect 'spilling' in the valence bands and improving spilling and correct orthogonalize to VB in the conduction bands.
         This process significantly decreases the band error in the TB interpolation while making little to no change to the chemically interpretible metrics (i.e. COHP, COOP, etc).
@@ -5372,8 +5372,8 @@ class COGITO(object):
                 if band_opt:
                     #nrange = 0
                     #for num in range(nrange+1):
-                    low = 2 # eV above fermi
-                    high = 5 # eV above fermi
+                    low = en_cut_low # eV above fermi
+                    high = en_cut_high # eV above fermi
                     low_valence = self.eigval[kpt][include_lowband][:,0]<=(self.efermi+self.energy_shift + low)
                     low_conduction = self.eigval[kpt][include_lowband][:,0]>(self.efermi+self.energy_shift + low)
                     cond_between = (self.eigval[kpt][include_lowband][:,0][low_conduction]<=(self.efermi+self.energy_shift + high))
@@ -7698,9 +7698,10 @@ class COGITO(object):
             [pa, pb, pc, pd, pe, pf, l] = self.orig_gausparams[orbgroup[0]]
             # [pg,ph] = [0,new_cutoff/4]
             # rescale the magnitude of the converged orbital
-            simprad = np.linspace(0, 5, 100)
+            simprad = np.linspace(0, 5, 100, endpoint=False)
             simporb = func_for_rad(simprad, pa, pb, pc, pd, pe, pf, 0, 1 / 2, l=l)
-            max_ind = np.argmax(np.abs(simporb))
+            prev_radial = self.cur_radial[orbgroup[0]]
+            max_ind = np.argmax(np.abs(prev_radial))
             max_rad = simprad[max_ind]
             max_val = np.abs(simporb[max_ind])
 
@@ -7766,7 +7767,11 @@ class COGITO(object):
             #print("possible maxes", truemaxval, other_maxval)
             # print("normalizing values:",max_rad,max_val,truemaxval)
             # print("before norm:",[pa,pc,pe])
-            [pa, pc, pe] = np.array([pa, pc, pe]) / max_val * truemaxval
+            # set height to always be 0.001
+            y = y / truemaxval * 0.001
+            for orb in orbgroup:
+                all_radunk[orb] = all_radunk[orb] / truemaxval * 0.001
+            [pa, pc, pe] = np.array([pa, pc, pe]) / max_val * 0.001
 
             # try new intermediate fit that has less parameters but is still expressive to improve consistency
             def fit_variable_func(x, a, b, c, d, e, f, l):
@@ -7956,6 +7961,12 @@ class COGITO(object):
             orbgroup_finalgausparams[group_ind] = [r_a, r_b, r_c, r_d, r_e, r_f, r_g, r_h, l]
 
             # check error of final guassian fit
+            new_rad = np.linspace(0, (cutoff / 2) ** (1 / 2) * 5, 100)
+            just_one = fit_variable_func(new_rad, a_n, b_n, c_n, d_n, e_n, f_n, l=l)
+            weights = np.ones(len(new_rad))
+            # reduce weights for low r at l>0
+            if l != 0:
+                weights[new_rad < zero_cutoff/8] = weights[new_rad < zero_cutoff/8]/4
             newgaus_one = func_for_rad(new_rad, r_a, r_b, r_c, r_d, r_e, r_f, r_g, r_h, l=l)
             newgaus_diff = just_one - newgaus_one
             origin_error = np.average(np.abs(newgaus_diff[new_rad < test_cutoff / 3])) / np.average(
@@ -7965,7 +7976,7 @@ class COGITO(object):
                 just_one[new_rad > test_cutoff * 0.9])
             abstail_error = np.average(np.abs(newgaus_diff[new_rad > test_cutoff * 0.9])) / np.average(
                 np.abs(just_one[new_rad > test_cutoff * 0.9]))
-            total_error = np.average(np.abs(newgaus_diff)) / np.average(np.abs(just_one))
+            total_error = np.average(np.abs(newgaus_diff),weights=weights) / np.average(np.abs(just_one),weights=weights)
             # print("all final fit error: (origin,tail,all)",origin_error,abstail_error,tail_error,total_error)
             final_gaus_fiterrors[orb_groups[group_ind], :] = np.array(
                 [origin_error, abstail_error, tail_error, total_error])[None, :]
@@ -7989,7 +8000,7 @@ class COGITO(object):
                 tot_orbWF[tot_orbWF == 0] = 0.000000000001
 
                 # get the error
-                unk = centered_orbs[orb].flatten().real
+                unk = centered_orbs[orb].flatten().real  / truemaxval * 0.001
                 diff_orb = np.abs((tot_orbWF - unk))
                 orb_nrms[orb] = np.sqrt(np.average(np.square(diff_orb))) / np.sqrt(np.average(np.square(unk)))
                 orb_nme[orb] = np.average(np.abs(diff_orb)) / np.average(np.abs(unk))
@@ -8418,8 +8429,7 @@ class COGITO(object):
         self.recip_orbcoeffs = recip_orbcoeffs
         self.real_orbcoeffs = orbital_coeffs
         all_loop_info = [avg_radius, chang_from_pseudo, chang_from_last, radial_nme, orb_nrms, orb_nme,
-                         final_gaus_fiterrors[:,
-                         3],prev_orb_nrms, prev_orb_nme, intermed_fit]  # orb_rad, orb_change_pseudo, orb_change_last, radial_change (nme), bloch_nrmse, bloch_nme,  final_gaus_fit_error
+                         final_gaus_fiterrors[:,3],prev_orb_nrms, prev_orb_nme, intermed_fit]  # orb_rad, orb_change_pseudo, orb_change_last, radial_change (nme), bloch_nrmse, bloch_nme,  final_gaus_fit_error
         self.all_orbloop_info = all_loop_info
         # print(self.sph_harm_key)
         # print(self.recip_orbcoeffs)
