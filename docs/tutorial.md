@@ -380,7 +380,11 @@ CoUN.get_COHP_DOS(my_CoUN, orbs_dict, NN='All')
 
 ### Generate and project on band structure
 
-This class generates the band structure with a variety of options for specifying kpath, see [api for details](api/COGITOpost.md#COGITO_dft.COGITOpost.COGITO_BAND.get_bandstructure). (1) In only `line_density` is passed, the high symmetry path is determined with pymatgen and seekpath. (2) If `high_sym_kpnts` is passed, these k-points with `line_density` will be used to make the final k-points list (`high_sym_kpath` can optionally be passed). (3) If `all_kpts` is passed, this will be used as the final k-points list (`kpt_labels` can optionally be passed).
+This class generates the band structure with a variety of options for specifying kpath, see `COGITO_BAND.get_bandstructure` in the api for more details. 
+
+1. In only `line_density` is passed, the high symmetry path is determined with pymatgen and seekpath. 
+2. If `high_sym_kpnts` is passed, these k-points with `line_density` will be used to make the final k-points list (`high_sym_kpath` can optionally be passed). 
+3. If `all_kpts` is passed, this will be used as the final k-points list (`kpt_labels` can optionally be passed).
 
 ```{tab} python
 Note: This class requires an instance of the tight binding class to initialize.
