@@ -29,7 +29,7 @@ As of verison 0.3.2, compute heavy sections of COGITO.py are parallelized. Contr
 ~~~ bash
 #SBATCH -N 1
 #SBATCH -n 1
-#SBATCH --cpus-per-task=4
+#SBATCH --cpus-per-task=16
 
 export OMP_NUM_THREADS=1
 ~~~
@@ -382,7 +382,7 @@ CoUN.get_COHP_DOS(my_CoUN, orbs_dict, NN='All')
 
 This class generates the band structure with a variety of options for specifying kpath, see `COGITO_BAND.get_bandstructure` in the api for more details. 
 
-1. In only `line_density` is passed, the high symmetry path is determined with pymatgen and seekpath. 
+1. If only `line_density` is passed, the high symmetry path is determined with pymatgen and seekpath. 
 2. If `high_sym_kpnts` is passed, these k-points with `line_density` will be used to make the final k-points list (`high_sym_kpath` can optionally be passed). 
 3. If `all_kpts` is passed, this will be used as the final k-points list (`kpt_labels` can optionally be passed).
 

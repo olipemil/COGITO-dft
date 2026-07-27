@@ -18,7 +18,7 @@ import time
 from functools import partial
 import plotly.graph_objects as go
 
-dist_version = "0.3.4"
+dist_version = "0.3.5"
 
 # try parallelizing stuff
 import os
