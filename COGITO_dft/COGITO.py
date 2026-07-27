@@ -18,7 +18,7 @@ import time
 from functools import partial
 import plotly.graph_objects as go
 
-dist_version = "0.3.5"
+dist_version = "0.3.6"
 
 # try parallelizing stuff
 import os
@@ -7858,7 +7858,7 @@ class COGITO(object):
             else:
                 low_bounds = [-1.0, expcutoff * 0.05, 0.0001, expcutoff * 0.05, 1.1, test_cutoff / 4]
                 high_bounds = [3.0, expcutoff * 3, 3, expcutoff * 3, max_decay, test_cutoff * 1.5]
-                pinit[6] = test_cutoff * 1.0
+                pinit[5] = test_cutoff * 1.0
                 pinit[0] = -0.001
 
             pseudo_orb = func_for_rad(x, pa, pb, pc, pd, pe, pf, pg, ph, l=l)
