@@ -214,6 +214,14 @@ class COGITO(object):
         if VASPRUNexists == True:
             vasprun = Vasprun(self.directory + "vasprun.xml")
             self.spin_polar = vasprun.is_spin
+
+            # also include atom magnetic moment in determining symemtrically equivalent orbitals
+            tot_magmoms = np.zeros(self.numAtoms)
+            if self.spin_polar:
+                mag = vasprun.parameters["MAGMOM"]
+                tot_magmoms = np.array(mag) #np.array([m["tot"] for m in mag])
+            print("Magnetic moment per atom for sym:", tot_magmoms)
+            self.atom_magmoms = tot_magmoms
             kpt_weights = vasprun.actual_kpoints_weights
             self.kpoints = np.around(np.array(vasprun.actual_kpoints),decimals=13)
             self.kpt_weights = np.array(kpt_weights)
@@ -569,14 +577,14 @@ class COGITO(object):
                     print("elapsed time for projecting orbs:",time4 - time3)
 
                     self.use_pseudo = orig_pseudo
-                    if band_opt or orb_opt or orb_orth:  # if not (no optimize and nonorth orbitals)
-                        if not orb_opt:
-                            print(
-                                "WARNING: it is a very bad idea to set orb_opt to False when the optimization occurs before expand_irred_kgrid()!")
-                            print(
-                                "         This is because in expand_irred_kgrid() the orbital overlaps are set by the coefficients.")
-                        self.optimize_band_set(band_opt=band_opt, orb_opt=orb_opt,
-                                               orb_orth=orb_orth, en_cut_low=0.0,en_cut_high=3.0)  # doing before expand grid definitely needs orb_opt=True!!!
+                    #if band_opt or orb_opt or orb_orth:  # if not (no optimize and nonorth orbitals)
+                    #    if not orb_opt:
+                    #        print(
+                    #            "WARNING: it is a very bad idea to set orb_opt to False when the optimization occurs before expand_irred_kgrid()!")
+                    #        print(
+                    #            "         This is because in expand_irred_kgrid() the orbital overlaps are set by the coefficients.")
+                    self.optimize_band_set(band_opt=True, orb_opt=True,
+                                           orb_orth=orb_orth, en_cut_low=0.0,en_cut_high=3.0)  # doing before expand grid definitely needs orb_opt=True!!!
 
                     wan_orbs, prim_wangrid = self.make_irred_wannier()
                     time2 = time.time()
@@ -3459,13 +3467,7 @@ class COGITO(object):
         #print("environment tensor!",self.environ_tensors)
 
         # also include atom magnetic moment in determining symemtrically equivalent orbitals
-        tot_magmoms = np.zeros(self.numAtoms)
-        if self.spin_polar:
-            if self.spin_polar:
-                from pymatgen.io.vasp.outputs import Outcar
-                outcar = Outcar(self.directory + "OUTCAR")
-                mag = outcar.magnetization
-                tot_magmoms = [m["tot"] for m in mag]
+        tot_magmoms = self.atom_magmoms
 
         for orb in range(self.num_orbs):
             sphkey = self.sph_harm_key[orb]
@@ -5480,10 +5482,7 @@ class COGITO(object):
         # add the magnetic properties
         print("spin polar?", self.spin_polar)
         if self.spin_polar:
-            from pymatgen.io.vasp.outputs import Outcar
-            outcar = Outcar(self.directory + "OUTCAR")
-            mag = outcar.magnetization
-            tot_magmoms = [m["tot"] for m in mag]
+            tot_magmoms = self.atom_magmoms
             print(tot_magmoms)
             site_prop = {}
             site_prop['magmom'] = tot_magmoms
@@ -7144,7 +7143,7 @@ class COGITO(object):
             for atm in range(self.numAtoms):
                 # print(atm)
                 center = self.primAtoms[atm] - prim_shift
-                new_center = np.matmul(prim_opt, center)  # - prim_shift
+                new_center = np.matmul(np.linalg.inv(prim_opt), center)  # - prim_shift
                 og_center = np.around(new_center,
                                       decimals=10)  # _cart_to_red((self._a[0], self._a[1], self._a[2]), [new_center])[0],decimals=8)
                 # print("first:",prim_center)
@@ -7442,7 +7441,7 @@ class COGITO(object):
                 np.cross(a1, a2) / np.linalg.norm(np.cross(a1, a2))])
         plane_dist = np.sum(self._a*perp_lines,axis=1)
         #print(perp_lines,self._a)
-        grid_len = np.array([rad_max,rad_max,rad_max])/plane_dist
+        grid_len = np.array([rad_max,rad_max,rad_max])/plane_dist*0.99
         #print(plane_dist,grid_len)
         abc = np.linalg.norm(self._a,axis=1)
         if spacing == None: # not ideal...
@@ -7458,6 +7457,15 @@ class COGITO(object):
         #grid_res = np.array([res, res, res], dtype=int)
 
         prim_spac = grid_len * 2 / (grid_res - 1)
+        # make sure prim_spacing is the same for axes that might be swapped
+        if (abc[0] - abc[1]) < 0.00001:
+            prim_spac[1] = prim_spac[0]
+        if (abc[0] - abc[2]) < 0.00001:
+            prim_spac[2] = prim_spac[0]
+        if (abc[1] - abc[2]) < 0.00001:
+            prim_spac[2] = prim_spac[1]
+        grid_len = prim_spac*(grid_res-1)/2
+
         #print(prim_spac,grid_len,grid_res)
         x, y, z = np.mgrid[-grid_len[0]: grid_len[0]: grid_res[0] * 1j, -grid_len[1]: grid_len[1]: grid_res[1] * 1j,
                   -grid_len[2]: grid_len[2]: grid_res[2] * 1j]
@@ -7530,13 +7538,7 @@ class COGITO(object):
         # print("environment tensor!",self.environ_tensors)
 
         # also include atom magnetic moment in determining symemtrically equivalent orbitals
-        tot_magmoms = np.zeros(self.numAtoms)
-        if self.spin_polar:
-            if self.spin_polar:
-                from pymatgen.io.vasp.outputs import Outcar
-                outcar = Outcar(self.directory + "OUTCAR")
-                mag = outcar.magnetization
-                tot_magmoms = [m["tot"] for m in mag]
+        tot_magmoms = self.atom_magmoms
 
         for orb in range(self.num_orbs):
             sphkey = self.sph_harm_key[orb]
@@ -7844,7 +7846,7 @@ class COGITO(object):
 
             sig = 1 / np.sqrt(init_weight + 0.00001)
 
-            pinit = [0.001, expcutoff / 2, 0.001, expcutoff, 1.01, test_cutoff / 1.5]
+            pinit = [0.001, expcutoff / 2, 0.001, expcutoff, 1.2, test_cutoff / 1.5]
             max_decay = 1.5 #min(1.2 + outer / 5, 1.5)
             if outer > 1:
                 max_decay = 1.8
@@ -7854,9 +7856,10 @@ class COGITO(object):
                 high_bounds = [3.0, expcutoff * 3, 3, expcutoff * 3, max_decay,
                                test_cutoff * 1.2]
             else:
-                low_bounds = [-1.0, expcutoff * 0.05, 0.0001, expcutoff * 0.05, 1, test_cutoff / 10]
-                high_bounds = [3.0, expcutoff * 3, 3, expcutoff * 3, max_decay,
-                               test_cutoff * 1.2]
+                low_bounds = [-1.0, expcutoff * 0.05, 0.0001, expcutoff * 0.05, 1.1, test_cutoff / 4]
+                high_bounds = [3.0, expcutoff * 3, 3, expcutoff * 3, max_decay, test_cutoff * 1.5]
+                pinit[6] = test_cutoff * 1.0
+                pinit[0] = -0.001
 
             pseudo_orb = func_for_rad(x, pa, pb, pc, pd, pe, pf, pg, ph, l=l)
             # also get residual standard deviation
@@ -8149,8 +8152,9 @@ class COGITO(object):
                 low_bounds = np.ones(8) * 0.000001  # [0,0,0,0,0,0,0,0]
                 high_bounds = [max_aceg * 10, new_cutoff * 3, 0.95, max_aceg * 10, 1, max_aceg * 10, max_aceg * 10, 1]
                 if not no_node:  # allow node in fit
-                    low_bounds[3] = -max_aceg * 10  # remove low bound for con2
+                    low_bounds[3] = -1  # remove low bound for con2
                     high_bounds[4] = 5  # can be larger than b now, but generally is still not
+
                 popt, pcov = curve_fit(gaus_fit, x, y, p0=gaus_init, sigma=sig, bounds=(low_bounds, high_bounds),
                                        ftol=0.000001, xtol=0.000001, method="trf", max_nfev=2000)
                 # check how close output is to bounds
