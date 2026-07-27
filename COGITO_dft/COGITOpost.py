@@ -1891,7 +1891,7 @@ class COGITO_BAND(object): # ought to pass the class COGITO_TB_Model
         """
         This function generates the COGITO band structure with a variety of options for specifying kpath.
         These options are:
-        (1) In only `line_density` is passed, the high symmetry path is determined with pymatgen and seekpath.
+        (1) If only `line_density` is passed, the high symmetry path is determined with pymatgen and seekpath.
         (2) If `high_sym_kpnts` is passed, these k-points with `line_density` will be used to make the final k-points list (`high_sym_kpath` can optionally be passed).
         (3) If `all_kpts` is passed, this will be used as the final k-points list (`kpt_labels` can optionally be passed).
 

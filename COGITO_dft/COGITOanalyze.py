@@ -3,7 +3,6 @@
 import json
 import numpy as np
 import matplotlib.pyplot as plt
-import pandas as pd
 
 # --- This python file will analyze output files from COGITO to access the run quality and if neccesssary, make recommendations about improving run. ---
 # -- Each function here analyzes a different file. ---
@@ -111,22 +110,22 @@ def analyze_orb_converg_info(dir: str = '',tag: str = '',make_change_plot: bool 
     iserror = False
     iswarn = False
     # check whether num_outer should be increased
-    if (radial_change_periter[-1] > 0.05).any():
+    if (radial_change_periter[-1] > 0.08).any():
         iserror = True
-        print("ERROR:   The radial part is not fully converged with some radial change over 5%: ",radial_change_periter[-1][radial_change_periter[-1] > 0.05])
+        print("ERROR:   The radial part is not fully converged with some radial change over 8%: ",radial_change_periter[-1][radial_change_periter[-1] > 0.08])
         print("         To resolve issue, run COGITO generate_TBmodel with a num_outer +2 or +3 higher.")
     elif (radial_change_periter[-1] > 0.01).any():
         iswarn = True
-        print("Warning: The radial part may not be fully converged with some radial change over 1%: ",radial_change_periter[-1][radial_change_periter[-1] > 0.01])
+        print("Warning: The radial part may not be fully converged with some radial change over 2%: ",radial_change_periter[-1][radial_change_periter[-1] > 0.01])
         print("         To improve convergence, run COGITO generate_TBmodel with a num_outer +1 or +2 higher.")
 
     if (np.abs(orb_change_periter[-1]) > 0.05).any():
         iserror = True
-        print("ERROR:   The COGITO radii is not fully converged with some orbital radius change over 5%: ", orb_change_periter[-1][radial_change_periter[-1] > 0.05])
+        print("ERROR:   The COGITO radii is not fully converged with some orbital radius change over 5%: ", orb_change_periter[-1][orb_change_periter[-1] > 0.05])
         print("         To resolve issue, run COGITO generate_TBmodel with a num_outer +2 or +3 higher.")
     elif (np.abs(orb_change_periter[-1]) > 0.01).any():
         iswarn = True
-        print("Warning: The COGITO radii may not be fully converged with some orbital radius change over 1%: ", orb_change_periter[-1][radial_change_periter[-1] > 0.01])
+        print("Warning: The COGITO radii may not be fully converged with some orbital radius change over 1%: ", orb_change_periter[-1][orb_change_periter[-1] > 0.01])
         print("         To improve convergence, run COGITO generate_TBmodel with a num_outer +1 or +2 higher.")
 
     # check whether num_outer shouldn't be increased because convergence has stopped (this is highly unlikely + very bad (for some terms))
@@ -137,25 +136,70 @@ def analyze_orb_converg_info(dir: str = '',tag: str = '',make_change_plot: bool 
     #print("avg radial change per loop:",avg_radial_chang)
     #print("avg radius change per loop:",avg_radius_chang)
 
+    if ((avg_nrmse[-1]-avg_nrmse[:-1]) > 0).any():
+        if ((avg_nrmse[-1]-avg_nrmse[:-1]) > 0.005).any(): # very high
+            iserror = True
+            print("ERROR:   The NRMSE between the fit atomic orbital and Wannier orbital is much larger in later step. This means the convergence procedure isn't working properly.")
+            print("         The average change in radial part per loop is: ", avg_nrmse)
+            print("         Solution:")
+            print("         Check that this doesn't result from an especially large num_outer (>5) such that COGITO proceeds when already maximally converged. If so, decrease num_outer or ignore error message.")
+            print("         No single fix. One could try adding more bands (NBANDS in vasp INCAR), decreasing min_proj (for generate_TBmodel), ")
+            print("         or changing orbital initialization (include_excited in generate_TBmodel).")
+            print("         If everything else works fine, proceed but interpret results cautiously.")
+        else: # not too bad
+            print("Warning:   The NRMSE between the fit atomic orbital and Wannier orbital is larger in later step. This means the convergence procedure isn't working perfeclty.")
+            print("         The average change in radial part per loop is: ", avg_nrmse)
+
+    # check for the projection fit error results
+    try:
+        proj_nrmse_iter = np.array(orb_info["proj_nrmse_iter"])
+
+        proj_avg_nrmse = np.average(proj_nrmse_iter, axis=1)
+        #print("avg proj nrmse per loop:", proj_avg_nrmse)
+        if ((proj_avg_nrmse[-1]-proj_avg_nrmse[:-1]) > 0).any():
+            if ((proj_avg_nrmse[-1]-proj_avg_nrmse[:-1]) > 0.005).any(): # very high
+                iserror = True
+                print("ERROR:   The NRMSE between the projected atomic orbital and Wannier orbital is much larger in later step. This means the convergence procedure isn't working properly.")
+                print("         The average change in radial part per loop is: ", proj_avg_nrmse)
+                print("         Solution:")
+                print("         Check that this doesn't result from an especially large num_outer (>5) such that COGITO proceeds when already maximally converged. If so, decrease num_outer or ignore error message.")
+                print("         No single fix. One could try adding more bands (NBANDS in vasp INCAR), decreasing min_proj (for generate_TBmodel), ")
+                print("         or changing orbital initialization (include_excited in generate_TBmodel).")
+                print("         If everything else works fine, proceed but interpret results cautiously.")
+            else: # not too bad
+                print("Warning:   The NRMSE between the projected atomic orbital and Wannier orbital is larger in later step. This means the convergence procedure isn't working perfeclty.")
+                print("         The average change in radial part per loop is: ", proj_avg_nrmse)
+    except:
+        no_proj = True # just do nothing
+
     if ((avg_radial_chang[-1]-avg_radial_chang[:-1]) > 0).any():
-        iserror = True
-        print("ERROR:   The change in radial part is larger in later step. This means the convergence procedure isn't working properly.")
-        print("         The average change in radial part per loop is: ", avg_radial_chang)
-        print("         Solution:")
-        print("         Check that this doesn't result from an especially large num_outer (>5) such that COGITO proceeds when already maximally converged. If so, decrease num_outer or ignore error message.")
-        print("         No single fix. One could try adding more bands (NBANDS in vasp INCAR), decreasing min_proj (for generate_TBmodel), ")
-        print("         or changing orbital initialization (include_excited in generate_TBmodel).")
-        print("         If everything else works fine, proceed but interpret results cautiously.")
+        if ((avg_radial_chang[-1]-avg_radial_chang[:-1]) > 0.005).any(): # very high
+            iserror = True
+            print("ERROR:   The change in radial part is much larger in later step. This means the convergence procedure isn't working properly.")
+            print("         The average change in radial part per loop is: ", avg_radial_chang)
+            print("         Solution:")
+            print("         Check that this doesn't result from an especially large num_outer (>5) such that COGITO proceeds when already maximally converged. If so, decrease num_outer or ignore error message.")
+            print("         No single fix. One could try adding more bands (NBANDS in vasp INCAR), decreasing min_proj (for generate_TBmodel), ")
+            print("         or changing orbital initialization (include_excited in generate_TBmodel).")
+            print("         If everything else works fine, proceed but interpret results cautiously.")
+        else: # not too bad
+            print("Warning:   The change in radial part is larger in later step. This means the convergence procedure isn't working perfeclty.")
+            print("         The average change in radial part per loop is: ", avg_radial_chang)
+
 
     if ((avg_radius_chang[-1] - avg_radius_chang[:-1]) > 0).any():
-        iserror = True
-        print("ERROR:   The change in orbital radius is larger in later step. This means the convergence procedure isn't working properly.")
-        print("         The average change in radius part per loop is: ", avg_radius_chang)
-        print("         Solution:")
-        print("         Check that this doesn't result from an especially large num_outer (>5) such that COGITO proceeds when already maximally converged. If so, decrease num_outer or ignore error message.")
-        print("         No single fix. One could try adding more bands (NBANDS in vasp INCAR), decreasing min_proj (for generate_TBmodel), ")
-        print("         or changing orbital initialization (include_excited in generate_TBmodel).")
-        print("         If everything else works fine, proceed but interpret results cautiously.")
+        if ((avg_radius_chang[-1] - avg_radius_chang[:-1]) > 0.005).any(): # very high
+            iserror = True
+            print("ERROR:   The change in orbital radius is much larger in later step. This means the convergence procedure isn't working properly.")
+            print("         The average change in radius part per loop is: ", avg_radius_chang)
+            print("         Solution:")
+            print("         Check that this doesn't result from an especially large num_outer (>5) such that COGITO proceeds when already maximally converged. If so, decrease num_outer or ignore error message.")
+            print("         No single fix. One could try adding more bands (NBANDS in vasp INCAR), decreasing min_proj (for generate_TBmodel), ")
+            print("         or changing orbital initialization (include_excited in generate_TBmodel).")
+            print("         If everything else works fine, proceed but interpret results cautiously.")
+        else:
+            print("Warning:   The change in orbital radius is larger in later step. This means the convergence procedure isn't working perfectly.")
+            print("         The average change in radius part per loop is: ", avg_radius_chang)
 
     # Finally check that Bloch nrmse/nme and final gaussian fit errors are reasonably low.
     #print(bloch_nrmse_iter, bloch_nme_iter, gaus_fit_error)
