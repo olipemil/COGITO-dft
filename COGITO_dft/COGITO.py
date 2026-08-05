@@ -18,7 +18,7 @@ import time
 from functools import partial
 import plotly.graph_objects as go
 
-dist_version = "0.3.6"
+dist_version = "0.3.7"
 
 # try parallelizing stuff
 import os
@@ -182,7 +182,7 @@ class COGITO(object):
                         include_dorbs[atm] = True
                     elif potatom[1] == "pv":
                         works = True
-                    else:
+                    elif potatom[1] == "sv":
                         print("ERROR: there is an extra electron state in the POTCAR that cannot be modeled")
         #print(include_dorbs)
         #print(self.POTCARatoms)
@@ -584,7 +584,7 @@ class COGITO(object):
                     #        print(
                     #            "         This is because in expand_irred_kgrid() the orbital overlaps are set by the coefficients.")
                     self.optimize_band_set(band_opt=True, orb_opt=True,
-                                           orb_orth=orb_orth, en_cut_low=0.0,en_cut_high=3.0)  # doing before expand grid definitely needs orb_opt=True!!!
+                                           orb_orth=orb_orth, en_cut_low=0.0,en_cut_high=3.0,max_spill=0.0)  # doing before expand grid definitely needs orb_opt=True!!!
 
                     wan_orbs, prim_wangrid = self.make_irred_wannier()
                     time2 = time.time()
@@ -5030,7 +5030,7 @@ class COGITO(object):
             'nme':nme,
         }
 
-    def optimize_band_set(self,band_opt=True,orb_opt=True,orb_orth=False, en_cut_low:float=2.0, en_cut_high:float=5.0):
+    def optimize_band_set(self,band_opt=True,orb_opt=True,orb_orth=False, en_cut_low:float=2.0, en_cut_high:float=5.0, max_spill:float=1.0):
         """
         This funciton refines the orbital coefficients for perfect 'spilling' in the valence bands and improving spilling and correct orthogonalize to VB in the conduction bands.
         This process significantly decreases the band error in the TB interpolation while making little to no change to the chemically interpretible metrics (i.e. COHP, COOP, etc).
@@ -5347,11 +5347,11 @@ class COGITO(object):
                 for ind in index[1:]:
                     start = ind[0]
                     end = ind[-1] + 1
-                    nonorth_coeff[start:end] = lowdin_orth_vectors_orblap(nonorth_coeff[start:end],orb_overlap) #,new_energies[start:end,start:end],return_energy=True),new_energies[start:end,start:end]
                     nonorth_coeff[start:end] = GS_orth_twoLoworthSets_orblap(nonorth_coeff[0:start],nonorth_coeff[start:end],orb_overlap) #,  #,new_energies[start:end,start:end]
                     #                                                                                 new_energies[0:start,0:start],new_energies[start:end,start:end],return_energy=True)
+                    nonorth_coeff[start:end] = lowdin_orth_vectors_orblap(nonorth_coeff[start:end],orb_overlap) #,new_energies[start:end,start:end],return_energy=True),new_energies[start:end,start:end]
 
-                nonorth_coeff[:self.num_orbs] = np.array(lowdin_orth_vectors_orblap(nonorth_coeff[:self.num_orbs],orb_overlap))
+                #nonorth_coeff[:self.num_orbs] = np.array(lowdin_orth_vectors_orblap(nonorth_coeff[:self.num_orbs],orb_overlap))
 
                 #inv_orth_coeff = np.matmul(np.conj(nonorth_coeff[:self.num_orbs]),orb_overlap).T  # np.linalg.inv(orth_coeff) #np.conj(orth_coeff.T)
                 #orb_mixing = np.matmul(nonorth_coeff[:self.num_orbs].T,inv_orth_coeff.T)
@@ -5381,7 +5381,7 @@ class COGITO(object):
                     cond_between = (self.eigval[kpt][include_lowband][:,0][low_conduction]<=(self.efermi+self.energy_shift + high))
                     #print("valence bands:",np.arange(len(is_valence))[is_valence])
                     low_coeff[low_valence] = nonorth_coeff[low_valence] # lowdin_orth_vectors_orblap(nonorth_coeff[is_valence],orb_overlap)
-                    low_coeff[low_conduction] = GS_orth_twoLoworthSets_orblap(new_coeff[low_valence],new_coeff[low_conduction],orb_overlap)
+                    low_coeff[low_conduction] = GS_orth_twoLoworthSets_orblap(low_coeff[low_valence],new_coeff[low_conduction],orb_overlap)
 
                     #is_between = (self.eigval[kpt][include_lowband][:,0]<=(self.efermi+self.energy_shift + high)) & (self.eigval[kpt][include_lowband][:,0]>(self.efermi+self.energy_shift + low))
                     is_valence = self.eigval[kpt][include_lowband][:,0]<=(self.efermi+self.energy_shift + high)
@@ -5392,6 +5392,10 @@ class COGITO(object):
                     ratio = np.ones(len(new_coeff[is_valence]))
                     ref_energies = self.eigval[kpt][include_lowband][:,0][is_valence][val_between]-(self.efermi+self.energy_shift + low) # between 0 and 2
                     ratio[val_between] = np.tanh((-ref_energies.real+1))/2+1/2 # ratio ~1 for ref_energies at 0 and ~0 for ref at 2.
+                    # set ratio=0 (don't lowdin orthogonalize band or GS higher bands to this band at all) if spill is too high
+                    val_spill = self.all_band_spillage[kpt][include_lowband][is_valence][val_between]
+                    rescale = val_spill > max_spill
+                    ratio[val_between][rescale] = ratio[val_between][rescale] * np.tanh((-(val_spill[rescale]-max_spill-0.1)/0.2+1))/2+1/2
                     # only keep part of the nonorth_coeff for in between region
                     new_coeff[is_valence][val_between] = new_coeff[is_valence][val_between]*ratio[val_between][:,None] + low_coeff[low_conduction][cond_between]*(1-ratio[val_between][:,None])
                     new_coeff[is_conduction] = GS_orth_twoLoworthSets_orblap(new_coeff[is_valence],new_coeff[is_conduction],orb_overlap,ratio=ratio)
@@ -5848,8 +5852,8 @@ class COGITO(object):
                 translate = prim_center-og_center
                 final_center = prim_center
                 diff_atoms = self.primAtoms - final_center
-                #dist_atoms = np.linalg.norm(diff_atoms,axis=1)
-                dist_atoms = np.amin([np.linalg.norm(diff_atoms,axis=1), np.abs(np.linalg.norm(diff_atoms,axis=1)-1),np.abs(np.linalg.norm(diff_atoms,axis=1)-2**(1/2)),np.abs(np.linalg.norm(diff_atoms,axis=1)-3**(1/2))],axis=0)
+                dist_atoms = np.linalg.norm(diff_atoms,axis=1)
+                #dist_atoms = np.amin([np.linalg.norm(diff_atoms,axis=1), np.abs(np.linalg.norm(diff_atoms,axis=1)-1),np.abs(np.linalg.norm(diff_atoms,axis=1)-2**(1/2)),np.abs(np.linalg.norm(diff_atoms,axis=1)-3**(1/2))],axis=0)
                 old_atom = np.argmin(np.abs(dist_atoms))
                 #print(og_center,prim_center,translate)
                 if np.sum(np.abs(dist_atoms)[old_atom]) > self.sym_prec:
@@ -6263,7 +6267,7 @@ class COGITO(object):
         for opti in range(len(operations)):
             # get the eigenvecs the normal way
             cart_opt = cart_operations[opti]
-            full_opt = cart_opt[:3,:3].T #np.linalg.inv()
+            full_opt = cart_opt[:3,:3] #np.linalg.inv()
             prim_opt = np.linalg.inv(operations[opti][:3,:3])#.T
             prim_shift = operations[opti][:3,3]
             sym_opt = full_opt
@@ -6298,7 +6302,8 @@ class COGITO(object):
                 translate = prim_center-og_center
                 final_center = prim_center
                 diff_atoms = self.primAtoms - final_center
-                dist_atoms = np.amin([np.linalg.norm(diff_atoms,axis=1), np.abs(np.linalg.norm(diff_atoms,axis=1)-1),np.abs(np.linalg.norm(diff_atoms,axis=1)-2**(1/2)),np.abs(np.linalg.norm(diff_atoms,axis=1)-3**(1/2))],axis=0)
+                dist_atoms = np.linalg.norm(diff_atoms,axis=1)
+                #dist_atoms = np.amin([np.linalg.norm(diff_atoms,axis=1), np.abs(np.linalg.norm(diff_atoms,axis=1)-1),np.abs(np.linalg.norm(diff_atoms,axis=1)-2**(1/2)),np.abs(np.linalg.norm(diff_atoms,axis=1)-3**(1/2))],axis=0)
                 old_atom = np.argmin(np.abs(dist_atoms))
                 #print(og_center,prim_center,translate)
                 if np.sum(np.abs(dist_atoms)[old_atom]) > self.sym_prec:
@@ -6692,6 +6697,7 @@ class COGITO(object):
                 holdoverlap[is_zero] = 0
                 proj_orb_overlap = np.reshape(holdoverlap,(num_projs,self.num_orbs))
                 '''
+
                 #orb1 = orbgroup[0] # each orbital in the group should have the same norm
                 #sphharm1 = all_sphharm[orb1]
                 #atm = all_orbatm[orb1]
@@ -7157,11 +7163,11 @@ class COGITO(object):
                 final_center = prim_center
                 # print(prim_opt,og_center,prim_center)
                 diff_atoms = self.primAtoms - final_center
-                # dist_atoms = np.linalg.norm(diff_atoms,axis=1)
-                dist_atoms = np.amin(
-                    [np.linalg.norm(diff_atoms, axis=1), np.abs(np.linalg.norm(diff_atoms, axis=1) - 1),
-                     np.abs(np.linalg.norm(diff_atoms, axis=1) - 2 ** (1 / 2)),
-                     np.abs(np.linalg.norm(diff_atoms, axis=1) - 3 ** (1 / 2))], axis=0)
+                dist_atoms = np.linalg.norm(diff_atoms,axis=1)
+                #dist_atoms = np.amin(
+                #    [np.linalg.norm(diff_atoms, axis=1), np.abs(np.linalg.norm(diff_atoms, axis=1) - 1),
+                #     np.abs(np.linalg.norm(diff_atoms, axis=1) - 2 ** (1 / 2)),
+                #     np.abs(np.linalg.norm(diff_atoms, axis=1) - 3 ** (1 / 2))], axis=0)
                 old_atom = np.argmin(np.abs(dist_atoms))
                 # print(og_center,prim_center,translate)
                 if np.sum(np.abs(dist_atoms)[old_atom]) > self.sym_prec:
@@ -7458,11 +7464,11 @@ class COGITO(object):
 
         prim_spac = grid_len * 2 / (grid_res - 1)
         # make sure prim_spacing is the same for axes that might be swapped
-        if (abc[0] - abc[1]) < 0.00001:
+        if abs(abc[0] - abc[1]) < 0.00001:
             prim_spac[1] = prim_spac[0]
-        if (abc[0] - abc[2]) < 0.00001:
+        if abs(abc[0] - abc[2]) < 0.00001:
             prim_spac[2] = prim_spac[0]
-        if (abc[1] - abc[2]) < 0.00001:
+        if abs(abc[1] - abc[2]) < 0.00001:
             prim_spac[2] = prim_spac[1]
         grid_len = prim_spac*(grid_res-1)/2
 
@@ -7756,8 +7762,20 @@ class COGITO(object):
             filtered_y = y[(y > 0) & (y < 2 * truemaxval)]
             filtered_x = x[(y > 0) & (y < 2 * truemaxval)]
             #print(np.abs(np.average(filtered_y)))
-            truemaxval = np.abs(np.average(filtered_y[np.abs(filtered_x - max_rad) < 0.1]))
+            if no_node: # don't want to filter out negative values for stuff with node, cause max is negative
+                truemaxval = np.abs(np.average(filtered_y[np.abs(filtered_x - max_rad) < 0.1]))
             other_maxval = np.abs(np.average(np.sort(y[x < max_rad + 0.5])[::-1][:50]))
+            if not no_node: # make truemaxval halfway between neg max and pos max
+                posmax_ind = np.argmax(prev_radial)
+                posmax_rad = simprad[posmax_ind]
+                posmax_val = simporb[posmax_ind]
+                postruemax =  np.abs(np.average(filtered_y[np.abs(filtered_x - posmax_rad) < 0.1]))
+                postother_max = np.abs(np.average(np.sort(y[x < posmax_rad + 0.5])[::-1][:50]))
+                #print("changing max:", max_rad, posmax_rad,truemaxval,postruemax)
+                #print(other_maxval,postother_max)
+                truemaxval = postruemax*2 # (truemaxval + postruemax)/2
+                other_maxval = postother_max*2 #(other_maxval + postother_max)/2
+                max_val = posmax_val*2 #(max_val+posmax_val)/2
             if self.verbose > 0:
                 print("possible maxes", truemaxval, other_maxval, max_rad + 0.5)
             if truemaxval < other_maxval / 4:
@@ -7766,6 +7784,7 @@ class COGITO(object):
                     truemaxval = 0.008
             if np.isnan(truemaxval):
                 truemaxval = max_val
+
             #print("possible maxes", truemaxval, other_maxval)
             # print("normalizing values:",max_rad,max_val,truemaxval)
             # print("before norm:",[pa,pc,pe])
@@ -7815,7 +7834,7 @@ class COGITO(object):
             mid_weights = np.sum(init_weight[(good_rad[notbad_low] > 1.5) & (good_rad[notbad_low] < 3)])  # & (good_rad > 0.5)])
             low_weights = np.sum(init_weight[(good_rad[notbad_low] < zero_cutoff/3)])  # & (good_rad > 0.5)])
             #print("weights:",mid_weights)
-            vary_wght = (mid_weights) / (outer + 1) ** (4) / 1.5
+            vary_wght = (mid_weights) / (outer + 1) ** (4) / 1
             vary_wght = vary_wght * (0.001 / truemaxval) ** (1 / 2)  # adjust for if normalization is different (and curve is just naturally lower)
             init_weight = np.append(init_weight,
                                     [vary_wght / 4, vary_wght * 1, vary_wght * 4, vary_wght * 8, vary_wght * 16,
@@ -7856,7 +7875,7 @@ class COGITO(object):
                 high_bounds = [3.0, expcutoff * 3, 3, expcutoff * 3, max_decay,
                                test_cutoff * 1.2]
             else:
-                low_bounds = [-1.0, expcutoff * 0.05, 0.0001, expcutoff * 0.05, 1.1, test_cutoff / 4]
+                low_bounds = [-1.0, expcutoff * 0.05, 0.0001, expcutoff * 0.5, 1.1, test_cutoff / 4]
                 high_bounds = [3.0, expcutoff * 3, 3, expcutoff * 3, max_decay, test_cutoff * 1.5]
                 pinit[5] = test_cutoff * 1.0
                 pinit[0] = -0.001
@@ -7871,7 +7890,7 @@ class COGITO(object):
                                     method="trf", max_nfev=5000)#, #ftol=0.000001, xtol=0.000001,
                                     #loss="soft_l1",f_scale=0.0001)#0.00005)#avg_errordev * 100) #huber
             [a_n, b_n, c_n, d_n, e_n, f_n] = popt
-            if self.verbose > 1:
+            if self.verbose > 0:
                 print("avg error deviation:", avg_errordev)
                 print("new fit:", popt)
             orbgroup_fancyparams[group_ind] = [a_n, b_n, c_n, d_n, e_n, f_n, l]
@@ -7935,18 +7954,21 @@ class COGITO(object):
             init_con2 = pe / pf + pa / pb
             gaus_init = [pa, pb, init_con1, init_con2, init_con3, pc, pg, init_con4]
             gaus_fit = partial(func_for_rad_fit, l=l)
-            sig = 1 / (weights + 0.00001)
             # max_aceg = np.max(np.abs([pa,pc,pe,pg]))
             low_bounds = np.ones(8) * 0.000001  # [0,0,0,0,0,0,0,0]
             high_bounds = [max_aceg * 10, new_cutoff * 3, 0.95, max_aceg * 10, 0.9, max_aceg * 10, max_aceg * 10,
                            0.9]
             if not no_node:  # allow node in fit
-                low_bounds[3] = -max_aceg * 10  # remove low bound for con2
+                low_bounds = np.ones(8) * 0.00001  # [0,0,0,0,0,0,0,0]
+                gaus_init = np.array(gaus_init) + 0.0001
+                low_bounds[3] = -1  # remove low bound for con2
                 high_bounds[4] = 5  # can be larger than b now, but generally is still not
             gaus_init = np.array(gaus_init) + 0.000001
+            sig = 1 / (weights + 0.00001)
             popt, pcov = curve_fit(gaus_fit, x, y, p0=gaus_init, sigma=sig, bounds=(low_bounds, high_bounds),
                                    ftol=0.000001, xtol=0.000001, method="trf", max_nfev=2000)
             # check how close output is to bounds
+            #print("guassian fit params:",popt, low_bounds,high_bounds)
             close_low = np.abs((popt - low_bounds) / popt)
             close_high = np.abs((popt - high_bounds) / popt)
             if ((close_low < 0.05).any() or (close_high < 0.05).any()) and self.verbose > 0:
