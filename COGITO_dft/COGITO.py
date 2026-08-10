@@ -18,7 +18,7 @@ import time
 from functools import partial
 import plotly.graph_objects as go
 
-dist_version = "0.3.7"
+dist_version = "0.3.8"
 
 # try parallelizing stuff
 import os
@@ -337,7 +337,7 @@ class COGITO(object):
     def generate_TBmodel(self, invariant: bool = True, irreducible_grid=True, verbose=0, tag="", include_excited=1, calc_nrms=False, save_orb_converg_info:bool=True,
                          orbfactor=1.0, num_steps=50, num_outer=4, plot_orbs = False,
                          min_proj=0.01, band_opt=True,orb_opt=True,orb_orth=False,start_from_orbnpy = False,plot_projBS = False,plot_projDOS=False,orbs = None,
-                         save_orb_data=False,save_orb_figs=False,minimum_orb_energy: float=-60,min_duplicate_energy:float=-60, file_type: str="npy",wannier_fit=True):
+                         save_orb_data=False,save_orb_figs=False,minimum_orb_energy: float=-60,min_duplicate_energy:float=-60, file_type: str="npy",wannier_fit=True,add_weight:float=1.0):
         """
         Runs all the functions neccessary to generate the TB interpolation.
         REQUIRES UNIFORM KPT GRID WITH NO SYMMETRY OR FULL SYMMETRY FOR TB MODEL.
@@ -377,6 +377,8 @@ class COGITO(object):
             file_type (str): The lower limit to add semi-core states in the POTCAR into the COGITO basis. Uses the atomic orbital energy listed in POTCAR.
             wannier_fit (bool): Whether to perform the iterations and fit using the approximate local orbitals from the Bloch orbital at k=0 (False) or just from the wannier orbital (True).
                             While the False option is faster (in serial), it varies unpredictably with supercell size and other variables which shouldn't effect fit. Thus, True is highly advised.
+            add_weight (float): Is multiplied by the weights for localizing the atomic orbitals fit to the Wannier orbitals. Setting >1 will generally make more localized, while <1 will make more diffuse 
+                                up to the natural delocalization of the initial Wannier orbitals. However, all weights are faded out over outer_steps.
 
         Usage:
             new_model = COGITO("silicon/")
@@ -591,7 +593,7 @@ class COGITO(object):
                     elapsed_time2 += time2 - time4
                     print("elapsed time for making wannier orbs:",elapsed_time2)
 
-                    self.fit_local_wannier(wan_orbs, prim_wangrid, plot_orbs=plot_orbs,orbfactor=orbfactor,outer=loop)
+                    self.fit_local_wannier(wan_orbs, prim_wangrid, plot_orbs=plot_orbs,orbfactor=orbfactor,outer=loop,add_weight=add_weight)
                     time3 = time.time()
                     elapsed_time3 += time3 - time2
                     print("elapsed time for fitting orbs:",elapsed_time3)
@@ -5838,27 +5840,34 @@ class COGITO(object):
             orb_trans = np.zeros(self.orbpos.shape)
             redo_from_wfcoeff = False # this is only necessary is orbital symmetry transformations aren't working (currently not for f orbitals)
             for atm in range(self.numAtoms):
-                #print(atm)
-                center = self.primAtoms[atm] - prim_shift
-                new_center = np.matmul(prim_opt,center)# - prim_shift
-                og_center = np.around(new_center,decimals=10)#_cart_to_red((self._a[0], self._a[1], self._a[2]), [new_center])[0],decimals=8)
-                #print("first:",prim_center)
-                prim_center =  copy.deepcopy(og_center)
-                while (prim_center>=1).any() or (prim_center<0).any():
-                    translate = np.zeros(3)
-                    translate[prim_center>=1] = -1
-                    translate[prim_center<0] = 1
-                    prim_center = prim_center + translate
-                translate = prim_center-og_center
-                final_center = prim_center
-                diff_atoms = self.primAtoms - final_center
-                dist_atoms = np.linalg.norm(diff_atoms,axis=1)
-                #dist_atoms = np.amin([np.linalg.norm(diff_atoms,axis=1), np.abs(np.linalg.norm(diff_atoms,axis=1)-1),np.abs(np.linalg.norm(diff_atoms,axis=1)-2**(1/2)),np.abs(np.linalg.norm(diff_atoms,axis=1)-3**(1/2))],axis=0)
-                old_atom = np.argmin(np.abs(dist_atoms))
-                #print(og_center,prim_center,translate)
-                if np.sum(np.abs(dist_atoms)[old_atom]) > self.sym_prec:
-                    print("WARNING: did not find an actual atom!!!",dist_atoms,old_atom)
-                #print(dist_atoms,old_atom)
+                # do new, less buggy, atom matching
+                source_img = prim_opt @ (self.primAtoms[atm] - prim_shift)
+
+                best_atom = None
+                best_L = None
+                best_dist = np.inf
+                for i, tau in enumerate(self.primAtoms):
+                    delta = source_img - tau
+
+                    # try all nearby lattice images
+                    for L in itertools.product([-2, -1, 0, 1, 2], repeat=3):
+                        L = np.array(L)
+                        resid_frac = delta + L
+
+                        # convert fractional residual to Cartesian before taking norm
+                        resid_cart = _red_to_cart((self._a[0], self._a[1], self._a[2]),[resid_frac])[0]
+
+                        dist = np.linalg.norm(resid_cart)
+                        if dist < best_dist:
+                            best_dist = dist
+                            best_atom = i
+                            best_L = L
+                old_atom = best_atom
+                translate = best_L
+
+                if best_dist > self.sym_prec:
+                    print("WARNING: did not find atom", source_img,best_L,best_atom, best_dist)
+
                 
                 if self.verbose > 1:
                     if atm != old_atom:
@@ -6288,27 +6297,34 @@ class COGITO(object):
             orb_transfer_matrix = np.zeros((self.num_orbs,self.num_orbs)) # will be real #[new orb, old orb]
                 
             for atm in range(self.numAtoms):
-                #print(atm)
-                center = self.primAtoms[atm] - prim_shift
-                new_center = np.matmul(prim_opt,center)# - prim_shift
-                og_center = np.around(new_center,decimals=10)#_cart_to_red((self._a[0], self._a[1], self._a[2]), [new_center])[0],decimals=8)
-                #print("first:",prim_center)
-                prim_center =  copy.deepcopy(og_center)
-                while (prim_center>=1).any() or (prim_center<0).any():
-                    translate = np.zeros(3)
-                    translate[prim_center>=1] = -1
-                    translate[prim_center<0] = 1
-                    prim_center = prim_center + translate
-                translate = prim_center-og_center
-                final_center = prim_center
-                diff_atoms = self.primAtoms - final_center
-                dist_atoms = np.linalg.norm(diff_atoms,axis=1)
-                #dist_atoms = np.amin([np.linalg.norm(diff_atoms,axis=1), np.abs(np.linalg.norm(diff_atoms,axis=1)-1),np.abs(np.linalg.norm(diff_atoms,axis=1)-2**(1/2)),np.abs(np.linalg.norm(diff_atoms,axis=1)-3**(1/2))],axis=0)
-                old_atom = np.argmin(np.abs(dist_atoms))
-                #print(og_center,prim_center,translate)
-                if np.sum(np.abs(dist_atoms)[old_atom]) > self.sym_prec:
-                    print("WARNING: did not find an actual atom!!!",dist_atoms,old_atom)
-                #print(dist_atoms,old_atom)
+                # do new, less buggy, atom matching
+                source_img = prim_opt @ (self.primAtoms[atm] - prim_shift)
+
+                best_atom = None
+                best_L = None
+                best_dist = np.inf
+                for i, tau in enumerate(self.primAtoms):
+                    delta = source_img - tau
+
+                    # try all nearby lattice images
+                    for L in itertools.product([-2, -1, 0, 1, 2], repeat=3):
+                        L = np.array(L)
+                        resid_frac = delta + L
+
+                        # convert fractional residual to Cartesian before taking norm
+                        resid_cart = _red_to_cart((self._a[0], self._a[1], self._a[2]),[resid_frac])[0]
+
+                        dist = np.linalg.norm(resid_cart)
+                        if dist < best_dist:
+                            best_dist = dist
+                            best_atom = i
+                            best_L = L
+                old_atom = best_atom
+                translate = best_L
+
+                if best_dist > self.sym_prec:
+                    print("WARNING: did not find atom", source_img,best_L,best_atom, best_dist)
+
                 
                 if self.verbose > 1:
                     if atm != old_atom:
@@ -7147,32 +7163,33 @@ class COGITO(object):
             # loop over atoms with p orbitals
             redo_from_wfcoeff = False  # this is only necessary is orbital symmetry transformations aren't working (currently not for f orbitals)
             for atm in range(self.numAtoms):
-                # print(atm)
-                center = self.primAtoms[atm] - prim_shift
-                new_center = np.matmul(np.linalg.inv(prim_opt), center)  # - prim_shift
-                og_center = np.around(new_center,
-                                      decimals=10)  # _cart_to_red((self._a[0], self._a[1], self._a[2]), [new_center])[0],decimals=8)
-                # print("first:",prim_center)
-                prim_center = copy.deepcopy(og_center)
-                while (prim_center >= 1).any() or (prim_center < 0).any():
-                    translate = np.zeros(3)
-                    translate[prim_center >= 1] = -1
-                    translate[prim_center < 0] = 1
-                    prim_center = prim_center + translate
-                translate = prim_center - og_center
-                final_center = prim_center
-                # print(prim_opt,og_center,prim_center)
-                diff_atoms = self.primAtoms - final_center
-                dist_atoms = np.linalg.norm(diff_atoms,axis=1)
-                #dist_atoms = np.amin(
-                #    [np.linalg.norm(diff_atoms, axis=1), np.abs(np.linalg.norm(diff_atoms, axis=1) - 1),
-                #     np.abs(np.linalg.norm(diff_atoms, axis=1) - 2 ** (1 / 2)),
-                #     np.abs(np.linalg.norm(diff_atoms, axis=1) - 3 ** (1 / 2))], axis=0)
-                old_atom = np.argmin(np.abs(dist_atoms))
-                # print(og_center,prim_center,translate)
-                if np.sum(np.abs(dist_atoms)[old_atom]) > self.sym_prec:
-                    print("WARNING: did not find an actual atom!!!", dist_atoms, old_atom)
-                # print(dist_atoms,old_atom)
+                # do new, less buggy, atom matching
+                source_img = np.linalg.inv(prim_opt) @ (self.primAtoms[atm] - prim_shift)
+
+                best_atom = None
+                best_L = None
+                best_dist = np.inf
+                for i, tau in enumerate(self.primAtoms):
+                    delta = source_img - tau
+
+                    # try all nearby lattice images
+                    for L in itertools.product([-2, -1, 0, 1, 2], repeat=3):
+                        L = np.array(L)
+                        resid_frac = delta + L
+
+                        # convert fractional residual to Cartesian before taking norm
+                        resid_cart = _red_to_cart((self._a[0], self._a[1], self._a[2]),[resid_frac])[0]
+
+                        dist = np.linalg.norm(resid_cart)
+                        if dist < best_dist:
+                            best_dist = dist
+                            best_atom = i
+                            best_L = L
+                old_atom = best_atom
+                translate = best_L
+
+                if best_dist > self.sym_prec:
+                    print("WARNING: did not find atom", source_img,best_L,best_atom, best_dist)
 
                 if self.verbose > 1:
                     if atm != old_atom:
@@ -7504,7 +7521,7 @@ class COGITO(object):
         prim_wangrid = sym_gpnts[ind].T
         return prim_wangrid, prim_spac, grid_res
 
-    def fit_local_wannier(self,wannier_orbs, prim_wangrid, plot_orbs = False,orbfactor=1.0,outer=0):
+    def fit_local_wannier(self,wannier_orbs, prim_wangrid, plot_orbs = False,orbfactor=1.0,outer=0,add_weight:float=1.0):
         """
         This function is necessary when using reciprocal integrals
         because they need an individual orbital rather than the unk = sum_R(y(r-R)).
@@ -7834,7 +7851,7 @@ class COGITO(object):
             mid_weights = np.sum(init_weight[(good_rad[notbad_low] > 1.5) & (good_rad[notbad_low] < 3)])  # & (good_rad > 0.5)])
             low_weights = np.sum(init_weight[(good_rad[notbad_low] < zero_cutoff/3)])  # & (good_rad > 0.5)])
             #print("weights:",mid_weights)
-            vary_wght = (mid_weights) / (outer + 1) ** (4) / 1
+            vary_wght = (mid_weights) / (outer + 1) ** (4) * add_weight
             vary_wght = vary_wght * (0.001 / truemaxval) ** (1 / 2)  # adjust for if normalization is different (and curve is just naturally lower)
             init_weight = np.append(init_weight,
                                     [vary_wght / 4, vary_wght * 1, vary_wght * 4, vary_wght * 8, vary_wght * 16,
@@ -7857,7 +7874,7 @@ class COGITO(object):
             # new_rad = np.append(new_rad[:15],new_rad)
             just_one = func_for_rad(new_rad, pa, pb, pc, pd, pe, pf, pg, ph, l=l)
             pseudo_weights = (np.ones(len(new_rad)) / min(outer+1, 3) * low_weights
-                              /(np.arange(len(new_rad))**(3/2)+10)) # *np.sum(weights[good_rad > 0.1]) #*((num_loop)/(loop+1))**(1/2)
+                              /(np.arange(len(new_rad))**(3/2)+10)) * add_weight**(1/2) # *np.sum(weights[good_rad > 0.1]) #*((num_loop)/(loop+1))**(1/2)
             #pseudo_weights[:15] = pseudo_weights[:15] * 2
             x = np.append(x, new_rad)
             y = np.append(y, just_one)
@@ -10601,7 +10618,7 @@ class Tee: # just to print to terminal and save output to file
 def run_cogito(directory,save_metadata:bool=True, invariant=True, irreducible_grid=True, verbose=0, tag="", include_excited=1, calc_nrms=False, save_orb_converg_info:bool=True,
                          orbfactor=1.0, num_steps=50, num_outer=4, plot_orbs = False,
                          min_proj=0.01, band_opt=True,orb_opt=True,orb_orth=False,start_from_orbnpy = False,plot_projBS = False,plot_projDOS=False,orbs = None,save_orb_data=False,
-                         save_orb_figs=False,minimum_orb_energy: float=-60,min_duplicate_energy:float=-60, wannier_fit=True):
+                         save_orb_figs=False,minimum_orb_energy: float=-60,min_duplicate_energy:float=-60, wannier_fit=True,add_weight:float=1.0):
     '''
     Runs COGITO. See generate_TBmodel() for a description of all the other arguments.
 
@@ -10644,6 +10661,7 @@ def run_cogito(directory,save_metadata:bool=True, invariant=True, irreducible_gr
             "minimum_orb_energy": minimum_orb_energy,
             "min_duplicate_energy": min_duplicate_energy,
             "wannier_fit": wannier_fit,
+            "add_weight": add_weight,
         }
 
         # save metadata
@@ -10663,7 +10681,7 @@ def run_cogito(directory,save_metadata:bool=True, invariant=True, irreducible_gr
                             save_orb_converg_info = save_orb_converg_info,orbfactor = orbfactor, num_steps = num_steps, num_outer = num_outer,
                             plot_orbs = plot_orbs,band_opt = band_opt, orb_opt = orb_opt, min_proj = min_proj,
                             start_from_orbnpy = start_from_orbnpy,save_orb_figs = save_orb_figs,
-                            minimum_orb_energy = minimum_orb_energy, min_duplicate_energy = min_duplicate_energy,wannier_fit=wannier_fit)
+                            minimum_orb_energy = minimum_orb_energy, min_duplicate_energy = min_duplicate_energy,wannier_fit=wannier_fit,add_weight=add_weight)
 
             if COGITOmodel.spin_polar:  # rerun with spin=1 for magnetic calculations
                 COGITOmodel = COGITO(directory, spin=1)
@@ -10672,7 +10690,7 @@ def run_cogito(directory,save_metadata:bool=True, invariant=True, irreducible_gr
                             save_orb_converg_info = save_orb_converg_info,orbfactor = orbfactor, num_steps = num_steps, num_outer = num_outer,
                             plot_orbs = plot_orbs,band_opt = band_opt, orb_opt = orb_opt, min_proj = min_proj,
                             start_from_orbnpy = start_from_orbnpy,save_orb_figs = save_orb_figs,
-                            minimum_orb_energy = minimum_orb_energy, min_duplicate_energy = min_duplicate_energy,wannier_fit=wannier_fit)
+                            minimum_orb_energy = minimum_orb_energy, min_duplicate_energy = min_duplicate_energy,wannier_fit=wannier_fit,add_weight=add_weight)
 
     else: # just run without saving any meta data
         COGITOmodel = COGITO(directory)
@@ -10683,7 +10701,7 @@ def run_cogito(directory,save_metadata:bool=True, invariant=True, irreducible_gr
                                      num_outer=num_outer,
                                      plot_orbs=plot_orbs, band_opt=band_opt, orb_opt=orb_opt, min_proj=min_proj,
                                      start_from_orbnpy=start_from_orbnpy, save_orb_figs=save_orb_figs,
-                                     minimum_orb_energy=minimum_orb_energy, min_duplicate_energy=min_duplicate_energy,wannier_fit=wannier_fit)
+                                     minimum_orb_energy=minimum_orb_energy, min_duplicate_energy=min_duplicate_energy,wannier_fit=wannier_fit,add_weight=add_weight)
 
         if COGITOmodel.spin_polar:  # rerun with spin=1 for magnetic calculations
             COGITOmodel = COGITO(directory, spin=1)
@@ -10694,7 +10712,7 @@ def run_cogito(directory,save_metadata:bool=True, invariant=True, irreducible_gr
                                          num_outer=num_outer,
                                          plot_orbs=plot_orbs, band_opt=band_opt, orb_opt=orb_opt, min_proj=min_proj,
                                          start_from_orbnpy=start_from_orbnpy, save_orb_figs=save_orb_figs,
-                                         minimum_orb_energy=minimum_orb_energy, min_duplicate_energy=min_duplicate_energy,wannier_fit=wannier_fit)
+                                         minimum_orb_energy=minimum_orb_energy, min_duplicate_energy=min_duplicate_energy,wannier_fit=wannier_fit,add_weight=add_weight)
 
 
 def main(argv=None):
@@ -10725,6 +10743,7 @@ def main(argv=None):
     cogito_args.add_argument("--minimum_orb_en",type=float,help="The lower limit to add semi-core states in the POTCAR into the COGITO basis.",default=-80)
     cogito_args.add_argument("--min_duplicate_en",type=float,help="The lower limit to add semi-core states when there is another valence state of the same l quantum number in the POTCAR into the COGITO basis.",default=-80)
     cogito_args.add_argument("--old_bloch_fit",help="If called, performs the iterations and fit using the approximate local orbitals from the Bloch orbital at k=0, otherwise just directly uses the Wannier orbitals.",action='store_true') #not #
+    cogito_args.add_argument("--increase_weight",type=float,help="Is multiplied by the weights for localizing the atomic orbitals fit to the Wannier orbitals. Setting >1 will generally make more localized, while <1 will make more diffuse up to the natural delocalization of the initial Wannier orbitals. However, all weights are faded out over outer_steps.",default=1.0)
 
 
     args = cogito_args.parse_args(argv) # if args_manual==None then should take from command line
@@ -10734,7 +10753,7 @@ def main(argv=None):
                         save_orb_converg_info =not args.no_save_converg,orbfactor = args.orbfactor, num_steps = args.num_steps, num_outer = args.num_outer,
                         plot_orbs = args.plot_orbs,band_opt =not args.no_band_opt, orb_opt =not args.no_orb_opt, min_proj = args.min_proj,
                         start_from_orbnpy = args.start_orbnpy,save_orb_figs = args.save_orb_figs,
-                        minimum_orb_energy = args.minimum_orb_en, min_duplicate_energy = args.min_duplicate_en, wannier_fit = not args.old_bloch_fit)
+                        minimum_orb_energy = args.minimum_orb_en, min_duplicate_energy = args.min_duplicate_en, wannier_fit = not args.old_bloch_fit,add_weight=args.increase_weight)
 
 if __name__ == "__main__":
     raise SystemExit(main())
