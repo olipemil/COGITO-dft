@@ -5843,15 +5843,24 @@ class COGITO(object):
             for atm in range(self.numAtoms):
                 # do new, less buggy, atom matching
                 source_img = prim_opt @ (self.primAtoms[atm] - prim_shift)
+                
+                # first mostly translate it into (0,1] so that the itertools search is gaurenteed to find a match
+                prim_center =  copy.deepcopy(source_img)
+                while (prim_center>=1).any() or (prim_center<0).any():
+                    translate = np.zeros(3)
+                    translate[prim_center>=1] = -1
+                    translate[prim_center<0] = 1
+                    prim_center = prim_center + translate
+                translate = prim_center-source_img
 
                 best_atom = None
                 best_L = None
                 best_dist = np.inf
                 for i, tau in enumerate(self.primAtoms):
-                    delta = source_img - tau
+                    delta = prim_center - tau
 
                     # try all nearby lattice images
-                    for L in itertools.product([-2, -1, 0, 1, 2], repeat=3):
+                    for L in itertools.product([-1, 0, 1], repeat=3):
                         L = np.array(L)
                         resid_frac = delta + L
 
@@ -5864,10 +5873,10 @@ class COGITO(object):
                             best_atom = i
                             best_L = L
                 old_atom = best_atom
-                translate = best_L
+                translate = translate + best_L
 
                 if best_dist > self.sym_prec:
-                    print("WARNING: did not find atom", source_img,best_L,best_atom, best_dist)
+                    print("WARNING: did not find atom", source_img,prim_center,best_L,best_atom, best_dist)
 
                 
                 if self.verbose > 1:
@@ -6301,14 +6310,23 @@ class COGITO(object):
                 # do new, less buggy, atom matching
                 source_img = prim_opt @ (self.primAtoms[atm] - prim_shift)
 
+                # first mostly translate it into (0,1] so that the itertools search is gaurenteed to find a match
+                prim_center =  copy.deepcopy(source_img)
+                while (prim_center>=1).any() or (prim_center<0).any():
+                    translate = np.zeros(3)
+                    translate[prim_center>=1] = -1
+                    translate[prim_center<0] = 1
+                    prim_center = prim_center + translate
+                translate = prim_center-source_img
+
                 best_atom = None
                 best_L = None
                 best_dist = np.inf
                 for i, tau in enumerate(self.primAtoms):
-                    delta = source_img - tau
+                    delta = prim_center - tau
 
                     # try all nearby lattice images
-                    for L in itertools.product([-2, -1, 0, 1, 2], repeat=3):
+                    for L in itertools.product([-1, 0, 1], repeat=3):
                         L = np.array(L)
                         resid_frac = delta + L
 
@@ -6321,10 +6339,10 @@ class COGITO(object):
                             best_atom = i
                             best_L = L
                 old_atom = best_atom
-                translate = best_L
+                translate = translate + best_L
 
                 if best_dist > self.sym_prec:
-                    print("WARNING: did not find atom", source_img,best_L,best_atom, best_dist)
+                    print("WARNING: did not find atom", source_img,prim_center,best_L,best_atom, best_dist)
 
                 
                 if self.verbose > 1:
@@ -7167,14 +7185,23 @@ class COGITO(object):
                 # do new, less buggy, atom matching
                 source_img = np.linalg.inv(prim_opt) @ (self.primAtoms[atm] - prim_shift)
 
+                # first mostly translate it into (0,1] so that the itertools search is gaurenteed to find a match
+                prim_center =  copy.deepcopy(source_img)
+                while (prim_center>=1).any() or (prim_center<0).any():
+                    translate = np.zeros(3)
+                    translate[prim_center>=1] = -1
+                    translate[prim_center<0] = 1
+                    prim_center = prim_center + translate
+                translate = prim_center-source_img
+
                 best_atom = None
                 best_L = None
                 best_dist = np.inf
                 for i, tau in enumerate(self.primAtoms):
-                    delta = source_img - tau
+                    delta = prim_center - tau
 
                     # try all nearby lattice images
-                    for L in itertools.product([-2, -1, 0, 1, 2], repeat=3):
+                    for L in itertools.product([-1, 0, 1], repeat=3):
                         L = np.array(L)
                         resid_frac = delta + L
 
@@ -7187,10 +7214,10 @@ class COGITO(object):
                             best_atom = i
                             best_L = L
                 old_atom = best_atom
-                translate = best_L
+                translate = translate + best_L
 
                 if best_dist > self.sym_prec:
-                    print("WARNING: did not find atom", source_img,best_L,best_atom, best_dist)
+                    print("WARNING: did not find atom", source_img,prim_center,best_L,best_atom, best_dist)
 
                 if self.verbose > 1:
                     if atm != old_atom:
