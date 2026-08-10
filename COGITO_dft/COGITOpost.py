@@ -167,9 +167,9 @@ class COGITO_TB_Model(object):
                     countd = 0
             if 'f' in ot:
                 sphharm.append(int(9+countd))
-                countd = countd + 1
-                if countd > 6:
-                    countd = 0
+                countf = countf + 1
+                if countf > 6:
+                    countf = 0
 
         num_orbs = len(orbatomnum)
         # read in the orbital vec for sphharm combo

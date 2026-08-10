@@ -114,9 +114,9 @@ def analyze_orb_converg_info(dir: str = '',tag: str = '',make_change_plot: bool 
         iserror = True
         print("ERROR:   The radial part is not fully converged with some radial change over 8%: ",radial_change_periter[-1][radial_change_periter[-1] > 0.08])
         print("         To resolve issue, run COGITO generate_TBmodel with a num_outer +2 or +3 higher.")
-    elif (radial_change_periter[-1] > 0.01).any():
+    elif (radial_change_periter[-1] > 0.02).any():
         iswarn = True
-        print("Warning: The radial part may not be fully converged with some radial change over 2%: ",radial_change_periter[-1][radial_change_periter[-1] > 0.01])
+        print("Warning: The radial part may not be fully converged with some radial change over 2%: ",radial_change_periter[-1][radial_change_periter[-1] > 0.02])
         print("         To improve convergence, run COGITO generate_TBmodel with a num_outer +1 or +2 higher.")
 
     if (np.abs(orb_change_periter[-1]) > 0.05).any():
@@ -147,7 +147,7 @@ def analyze_orb_converg_info(dir: str = '',tag: str = '',make_change_plot: bool 
             print("         or changing orbital initialization (include_excited in generate_TBmodel).")
             print("         If everything else works fine, proceed but interpret results cautiously.")
         else: # not too bad
-            print("Warning:   The NRMSE between the fit atomic orbital and Wannier orbital is larger in later step. This means the convergence procedure isn't working perfeclty.")
+            print("Warning:   The NRMSE between the fit atomic orbital and Wannier orbital is larger in later step. This means the convergence procedure isn't working perfectly.")
             print("         The average change in radial part per loop is: ", avg_nrmse)
 
     # check for the projection fit error results
@@ -167,7 +167,7 @@ def analyze_orb_converg_info(dir: str = '',tag: str = '',make_change_plot: bool 
                 print("         or changing orbital initialization (include_excited in generate_TBmodel).")
                 print("         If everything else works fine, proceed but interpret results cautiously.")
             else: # not too bad
-                print("Warning:   The NRMSE between the projected atomic orbital and Wannier orbital is larger in later step. This means the convergence procedure isn't working perfeclty.")
+                print("Warning:   The NRMSE between the projected atomic orbital and Wannier orbital is larger in later step. This means the convergence procedure isn't working perfectly.")
                 print("         The average change in radial part per loop is: ", proj_avg_nrmse)
     except:
         no_proj = True # just do nothing
@@ -183,7 +183,7 @@ def analyze_orb_converg_info(dir: str = '',tag: str = '',make_change_plot: bool 
             print("         or changing orbital initialization (include_excited in generate_TBmodel).")
             print("         If everything else works fine, proceed but interpret results cautiously.")
         else: # not too bad
-            print("Warning:   The change in radial part is larger in later step. This means the convergence procedure isn't working perfeclty.")
+            print("Warning:   The change in radial part is larger in later step. This means the convergence procedure isn't working perfectly.")
             print("         The average change in radial part per loop is: ", avg_radial_chang)
 
 
