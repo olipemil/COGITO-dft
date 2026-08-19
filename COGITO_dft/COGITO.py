@@ -338,11 +338,10 @@ class COGITO(object):
     def generate_TBmodel(self, invariant: bool = True, irreducible_grid=True, verbose=0, tag="", include_excited=1, calc_nrms=False, save_orb_converg_info:bool=True,
                          orbfactor=1.0, num_steps=50, num_outer=4, plot_orbs = False,
                          min_proj=0.01, band_opt=True,orb_opt=True,orb_orth=False,start_from_orbnpy = False,plot_projBS = False,plot_projDOS=False,orbs = None,
-                         save_orb_data=False,save_orb_figs=False,minimum_orb_energy: float=-60,min_duplicate_energy:float=-60, file_type: str="npy",wannier_fit=True,add_weight:float=1.0):
+                         save_orb_data=False,save_orb_figs=False,minimum_orb_energy: float=-60,min_duplicate_energy:float=-60, file_type: str="npy",wannier_fit=True,add_weight:float=1.0,prec:float=0.2):
         """
         Runs all the functions neccessary to generate the TB interpolation.
         REQUIRES UNIFORM KPT GRID WITH NO SYMMETRY OR FULL SYMMETRY FOR TB MODEL.
-
 
         Args:
             invariant (bool): Whether to construct the orbitals as eigenvectors of the local environment tensor.
@@ -589,7 +588,7 @@ class COGITO(object):
                     self.optimize_band_set(band_opt=True, orb_opt=True,
                                            orb_orth=orb_orth, en_cut_low=0.0,en_cut_high=3.0,max_spill=0.0)  # doing before expand grid definitely needs orb_opt=True!!!
 
-                    wan_orbs, prim_wangrid = self.make_irred_wannier()
+                    wan_orbs, prim_wangrid = self.make_irred_wannier(prec=prec)
                     time2 = time.time()
                     elapsed_time2 += time2 - time4
                     print("elapsed time for making wannier orbs:",elapsed_time2)
@@ -1296,14 +1295,11 @@ class COGITO(object):
                 pc = 1.2
                 con1 = 1/2
                 pd = pb * con1
-                if no_node:
-                    con3 = 1/3
-                    pf = pb * con3
-                    pe =  -0.1
-                else:
-                    con3 = 1/3
-                    pf = pb * con3
-                    pe = -0.5
+                con3 = 1/3
+                pf = pb * con3
+                pe =  -0.1
+                if not no_node:
+                    pc = -0.5
                 pg = 0
                 ph = pb*1/2
                 init_con1 = pd/pb #np.log( - 1)
@@ -1321,12 +1317,11 @@ class COGITO(object):
                     low_bounds = [0.2,0.1,0.1,0.1,0.1,0.01]
                 high_bounds = [5.,new_cutoff*3,0.9,5.,0.8,5.]#,np.inf,0.9]
                 if not no_node: # allow node in fit
-                    low_bounds[3] = -5. # remove low bound for con2
-                    high_bounds[4] = 5 # can be larger than b now, but generally is still not
+                    low_bounds[5] = -10. # remove low bound for c
                 x = use_rad #np.append(use_rad,[0,0])
                 y = use_data #np.append(use_data,[cutoff+2,cutoff+5])
                 try:
-                    popt,pcov = curve_fit(gaus_fit,x,y,p0=gaus_init,sigma=sig,bounds=(low_bounds,high_bounds),ftol=0.000001, xtol=0.000001,method="trf",max_nfev=2000)
+                    popt,pcov = curve_fit(gaus_fit,x,y,p0=gaus_init,sigma=sig,bounds=(low_bounds,high_bounds),ftol=0.00000001, xtol=0.00000001,method="trf",max_nfev=2000)
                     [a,b,con1,con2,con3,c] = popt
                     d = con1 * b
                     f = con3 * b
@@ -6097,7 +6092,7 @@ class COGITO(object):
             new_Cnkg = Gcoeff1[:,ind]
             # also include time symmetry
             if is_opposite[kpt]:
-                if self.verbose > -1:
+                if self.verbose > 1:
                     print("at time sym point!",kpt)
                 new_Cnkg = np.conj(new_Cnkg)
             
@@ -6978,13 +6973,15 @@ class COGITO(object):
 
         return self.hamilton
 
-    def make_irred_wannier(self,n_jobs=None, backend="threading"):
+    def make_irred_wannier(self,prec=0.25,n_jobs=None, backend="threading"):
         """
         This function is being made because there is no way to gaurentee that the Hirshfeld-like fitting of the Bloch orbital is invariant with primitive cell size.
         After much trying on the Bloch fitting, I am giving up and trying a direct Wannier fit. However, I would like it to be as fast as possible.
         As such, I will construct only local (<~3Ang) parts of the whole Wannier function to dramatically save time.
         I will also construct this local wannier part per irred k-point by summing over bands, than get the full summed Wannier, which requires the red grid by transforming the irred Wannier bits.
         Wish me luck.
+        The variable 'prec' is to specify the precision that the grid resolution should adhere to. The default was 0.3 in v0310, but should now definitely be lower.
+
         Returns:
 
         """
@@ -6992,7 +6989,7 @@ class COGITO(object):
         orb_radmax = self.cutoff_rad[self.orbatomnum] * 0.8 + np.tanh((np.array(self.init_orb_energy) + 8) / 5) * 0.2
         #print(orb_radmax)
         rad_max = np.amax(orb_radmax)+2.
-        min_spac = min(np.amin(orb_radmax)*0.3,0.35)
+        min_spac = min(np.amin(orb_radmax)*prec,0.3)
         #print(rad_max)
         print("Wannier grid spacing:",min_spac)
         prim_wangrid, prim_spac, grid_res = self.get_wannier_grid(spacing=min_spac,rad_max=rad_max) # rad_max is adjusted later per orbital
@@ -7549,6 +7546,7 @@ class COGITO(object):
         prim_wangrid = sym_gpnts[ind].T
         return prim_wangrid, prim_spac, grid_res
 
+
     def fit_local_wannier(self,wannier_orbs, prim_wangrid, plot_orbs = False,orbfactor=1.0,outer=0,add_weight:float=1.0):
         """
         This function is necessary when using reciprocal integrals
@@ -7840,8 +7838,16 @@ class COGITO(object):
             [pa, pc, pe] = np.array([pa, pc, pe]) / max_val * 0.001
 
             # try new intermediate fit that has less parameters but is still expressive to improve consistency
-            def fit_variable_func(x, a, b, c, d, e, f, l):
-                tan_fac = 1
+            def fit_variable_func(x, a, b, c, d, e, cont, l):
+                # 1/cont is the ratio of the curvature at r=0 that is from the tanh part
+                # Generally, cont should be between 0.25 and 4
+                if a > 0: # this is not node fit
+                    c = c*a
+                diff = (abs(d*2 - (c*b**2/abs(a))**(1/2) * cont**(1/2))/(d*2))
+                if d*2 < (c*b**2/abs(a))**(1/2) * cont**(1/2):
+                    diff = 0
+                f = (c*b**2/abs(a))**(1/2) * cont**(1/2)*(1-(1-diff)**3) + (1-diff)**3*d*2 # the last part is to make sure it doesn't 'turn on' far after it's decayed
+                tan_fac = 2
                 if l == 0:
                     tan_fac = 2
                 return x ** l * (a / b * np.exp(-(x / b) ** 2) + c / d * np.exp(-x ** e / d) * np.tanh(
@@ -7877,16 +7883,16 @@ class COGITO(object):
                               zero_cutoff + 2.0])
             y = np.append(y, [0, 0, 0, 0, 0, 0, 0, 0, 0])
             mid_weights = np.sum(init_weight[(good_rad[notbad_low] > 1.5) & (good_rad[notbad_low] < 3)])  # & (good_rad > 0.5)])
-            low_weights = np.sum(init_weight[(good_rad[notbad_low] < zero_cutoff/3)])  # & (good_rad > 0.5)])
+            low_weights = np.sum(init_weight[(good_rad[notbad_low] < 1.5)])  # & (good_rad > 0.5)])
             #print("weights:",mid_weights)
             vary_wght = (mid_weights) / (outer + 1) ** (4) * add_weight
-            vary_wght = vary_wght * (0.001 / truemaxval) ** (1 / 2)  # adjust for if normalization is different (and curve is just naturally lower)
+            #vary_wght = vary_wght * (0.001 / truemaxval) ** (1 / 2)  # adjust for if normalization is different (and curve is just naturally lower)
             init_weight = np.append(init_weight,
                                     [vary_wght / 4, vary_wght * 1, vary_wght * 4, vary_wght * 8, vary_wght * 16,
                                      vary_wght * 32, vary_wght * 64, vary_wght * 128, vary_wght * 256])
 
             # just add a couple very far out ones for general use
-            const_weight = mid_weights * (0.001 / truemaxval) ** (1 / 2)
+            const_weight = mid_weights #* (0.001 / truemaxval) ** (1 / 2)
             x = np.append(x, [zero_cutoff + 1.5, zero_cutoff + 2.5, zero_cutoff + 3.5, zero_cutoff + 4.5])
             y = np.append(y, [0, 0, 0, 0])
             #vary_wght = (mid_weights) / min((outer + 1) ** (2), 10)
@@ -7898,31 +7904,47 @@ class COGITO(object):
             #low_weights = np.sum(init_weight[(good_rad[notbad_low] < zero_cutoff/3)])  # & (good_rad > 0.5)])
             #low_weights = low_weights * (
             #            0.001 / truemaxval)  # adjust for if normalization is different (and curve is just naturally lower)
-            new_rad = np.linspace(0, zero_cutoff/4, 30)
+            ##new_rad = np.linspace(0, zero_cutoff/4, 30)
             # new_rad = np.append(new_rad[:15],new_rad)
-            just_one = func_for_rad(new_rad, pa, pb, pc, pd, pe, pf, pg, ph, l=l)
-            pseudo_weights = (np.ones(len(new_rad)) / min(outer+1, 3) * low_weights
-                              /(np.arange(len(new_rad))**(3/2)+10)) * add_weight**(1/2) # *np.sum(weights[good_rad > 0.1]) #*((num_loop)/(loop+1))**(1/2)
+            ##just_one = func_for_rad(new_rad, pa, pb, pc, pd, pe, pf, pg, ph, l=l)
+            ##pseudo_weights = (np.ones(len(new_rad)) / min(outer+1, 3) * low_weights
+            ##                  /(np.arange(len(new_rad))**(3/2)+10)) * add_weight**(1/2) # *np.sum(weights[good_rad > 0.1]) #*((num_loop)/(loop+1))**(1/2)
             #pseudo_weights[:15] = pseudo_weights[:15] * 2
+
+
+            # switch the lowrad weights to using cur_radial and make weight magnitude more consistently determined
+            simprad = np.linspace(0, 5, 100, endpoint=False) # set up the grid used previously
+            prev_radial = self.cur_radial[orbgroup[0]]
+            max_ind = np.argmax(prev_radial)
+            max_val = np.abs(prev_radial[max_ind]) # will always be positive though
+            if not no_node:
+                max_val = max_val*2
+            small_rad = simprad < zero_cutoff/4
+            new_rad = simprad[small_rad]
+            just_one = prev_radial[small_rad] / max_val * 0.001
+            pseudo_weights = (np.ones(len(new_rad)) / min((outer+1)**(3/2), 5) * low_weights / 10 / 2
+                              /(np.arange(len(new_rad))**(3/2)+1)) * add_weight**(1/2)
+
+
             x = np.append(x, new_rad)
             y = np.append(y, just_one)
             init_weight = np.append(init_weight, pseudo_weights)  # use more for small systems with less points
 
             sig = 1 / np.sqrt(init_weight + 0.00001)
 
-            pinit = [0.001, expcutoff / 2, 0.001, expcutoff, 1.2, test_cutoff / 1.5]
+            pinit = [0.001, expcutoff / 2, 1.0, expcutoff*0.8, 1.2, 1+0.25*l]
             max_decay = 1.5 #min(1.2 + outer / 5, 1.5)
             if outer > 1:
                 max_decay = 1.8
-            low_bounds = [-1.0, expcutoff * 0.05, 0.0001, expcutoff * 0.05, 1, test_cutoff / (2.)]
+            low_bounds = [-1.0, expcutoff * 0.2, 0.5, expcutoff * 0.2, 1, 0.25*(l+1)]
             if no_node:
-                low_bounds = [0.0001, expcutoff * 0.05, 0.0001, expcutoff * 0.05, 1, test_cutoff / (2.)]
-                high_bounds = [3.0, expcutoff * 3, 3, expcutoff * 3, max_decay,
-                               test_cutoff * 1.2]
+                low_bounds = [0.0001, expcutoff * 0.2, 0.5, expcutoff * 0.2, 1, 0.25*(l+1)]
+                high_bounds = [0.1, expcutoff * 3, 2, expcutoff * 3, max_decay, 2.0*(l+1)**(1/2)]
             else:
-                low_bounds = [-1.0, expcutoff * 0.05, 0.0001, expcutoff * 0.5, 1.1, test_cutoff / 4]
-                high_bounds = [3.0, expcutoff * 3, 3, expcutoff * 3, max_decay, test_cutoff * 1.5]
-                pinit[5] = test_cutoff * 1.0
+                low_bounds = [-1.0, expcutoff * 0.05, 0.0001, expcutoff * 0.5, 1.1, 0.1]
+                high_bounds = [3.0, expcutoff * 3, 3, expcutoff * 3, max_decay, 40]
+                #pinit[5] = test_cutoff * 1.0
+                pinit[2] = 0.001
                 pinit[0] = -0.001
 
             pseudo_orb = func_for_rad(x, pa, pb, pc, pd, pe, pf, pg, ph, l=l)
@@ -7932,12 +7954,16 @@ class COGITO(object):
             avg_errordev = np.average(np.abs(residuals - median), weights=init_weight)
 
             popt, pcov = curve_fit(new_fitting_func, x, y, p0=pinit, sigma=sig, bounds=(low_bounds, high_bounds),
-                                    method="trf", max_nfev=5000)#, #ftol=0.000001, xtol=0.000001,
+                                    method="trf", max_nfev=5000, ftol=1e-10, gtol=1e-10)
                                     #loss="soft_l1",f_scale=0.0001)#0.00005)#avg_errordev * 100) #huber
             [a_n, b_n, c_n, d_n, e_n, f_n] = popt
+            f = (c_n*(b_n**2)/abs(a_n))**(1/2) * f_n**(1/2)
+            if a_n > 0: # this is not node fit
+                f = (c_n*a_n*(b_n**2)/abs(a_n))**(1/2) * f_n**(1/2)
             if self.verbose > 0:
                 print("avg error deviation:", avg_errordev)
                 print("new fit:", popt)
+                print(f)
             orbgroup_fancyparams[group_ind] = [a_n, b_n, c_n, d_n, e_n, f_n, l]
             orbgroup_pseudoparams[group_ind] = [pa, pb, pc, pd, pe, pf, pg, ph, l]
 
@@ -7966,8 +7992,8 @@ class COGITO(object):
                                                      20))  # [cutoff+1.5,cutoff+1.8,cutoff+2.2,cutoff+3])
             weights = np.append(weights, np.linspace(0, 4, 20))  # [2,4,8,15])
             # reduce weights for low r at l>0
-            if l != 0:
-                weights[new_rad < zero_cutoff/8] = weights[new_rad < zero_cutoff/8]/4
+            #if l != 0:
+            #    weights[new_rad < zero_cutoff/8] = weights[new_rad < zero_cutoff/8]/4
 
             # set initial conditions
             l = l
@@ -8004,14 +8030,11 @@ class COGITO(object):
             high_bounds = [max_aceg * 10, new_cutoff * 3, 0.95, max_aceg * 10, 0.9, max_aceg * 10, max_aceg * 10,
                            0.9]
             if not no_node:  # allow node in fit
-                low_bounds = np.ones(8) * 0.00001  # [0,0,0,0,0,0,0,0]
-                gaus_init = np.array(gaus_init) + 0.0001
-                low_bounds[3] = -1  # remove low bound for con2
-                high_bounds[4] = 5  # can be larger than b now, but generally is still not
+                low_bounds[5] = -1  # remove low bound for c
             gaus_init = np.array(gaus_init) + 0.000001
             sig = 1 / (weights + 0.00001)
             popt, pcov = curve_fit(gaus_fit, x, y, p0=gaus_init, sigma=sig, bounds=(low_bounds, high_bounds),
-                                   ftol=0.000001, xtol=0.000001, method="trf", max_nfev=2000)
+                                    method="trf", max_nfev=5000, ftol=1e-10, gtol=1e-10)
             # check how close output is to bounds
             #print("guassian fit params:",popt, low_bounds,high_bounds)
             close_low = np.abs((popt - low_bounds) / popt)
@@ -8219,11 +8242,10 @@ class COGITO(object):
                 low_bounds = np.ones(8) * 0.000001  # [0,0,0,0,0,0,0,0]
                 high_bounds = [max_aceg * 10, new_cutoff * 3, 0.95, max_aceg * 10, 1, max_aceg * 10, max_aceg * 10, 1]
                 if not no_node:  # allow node in fit
-                    low_bounds[3] = -1  # remove low bound for con2
-                    high_bounds[4] = 5  # can be larger than b now, but generally is still not
-
+                    low_bounds[5] = -1  # remove low bound for c
+                gaus_init = np.array(gaus_init) + 0.000001
                 popt, pcov = curve_fit(gaus_fit, x, y, p0=gaus_init, sigma=sig, bounds=(low_bounds, high_bounds),
-                                       ftol=0.000001, xtol=0.000001, method="trf", max_nfev=2000)
+                                        method="trf", max_nfev=5000, ftol=1e-10, gtol=1e-10)
                 # check how close output is to bounds
                 close_low = np.abs((popt - low_bounds) / popt)
                 close_high = np.abs((popt - high_bounds) / popt)
@@ -8254,33 +8276,47 @@ class COGITO(object):
             if self.save_orb_figs or plot_orbs:
                 # plt.scatter(rad[big_ang],new_rad_part,c="red",s=1)
                 fig, ax = plt.subplots()
-                ax.plot(good_rad, radunk, 'o', color="blue", markersize=1 / 4, label="From approximate atomic")
+                #ax.plot(good_rad, radunk, 'o', color="dimgray", markersize=2, label="Wannier orbital")
+                #print("weight values", np.amax(weights),np.amin(weights),np.average(weights),np.median(weights))
+                
+                bins = [(0.0, 0.1), (0.1, 0.2), (0.2, 0.3),(0.3, 0.4), (0.4, 0.5), (0.5, np.inf)]
+
+                cmap = plt.colormaps["Greys"]
+                colors = [cmap(v) for v in [0.1, 0.3, 0.5, 0.7, 0.9, 1.0]]
+
+                for i, ((low, high), color) in enumerate(zip(bins, colors)):
+                    mask = (weights >= low) & (weights < high)
+                    ax.plot(good_rad[mask],radunk[mask], "o", ms=2,color=color,
+                        label="Wannier orbital" if i == 0 else None,)
+                #sc = ax.scatter(good_rad, radunk, s=50, label="Wannier orbital", c=weights,cmap='Greys',vmin=0,vmax=0.5)
                 new_rad = np.linspace(0, 5, 100)
                 # plot the original starting radial part
                 [nx, ny, nz] = self.gridxyz
-                ax.plot(new_rad, self.orig_radial[orbgroup[0]], color="black", linewidth=2.5, label="Pseudo orbital")
+                #ax.plot(new_rad, self.orig_radial[orbgroup[0]], color="black", linewidth=2.5, label="Pseudo orbital")
                 # plt.scatter(rad[big_ang],test_new[big_ang],facecolors="None",edgecolors="red")
                 just_one = fit_variable_func(new_rad, a_n, b_n, c_n, d_n, e_n, f_n, l=l)
                 # just_one = func_for_rad(new_rad,a,b,c,d,e,f,g,h,l=l)
                 # just_one[new_rad>cutoff] = func_for_rad_exp(new_rad[new_rad>cutoff],a_e,b_e,c_e,d_e,e_e,f_e,l=l)
                 # plt.ylim((0,0.0005))
                 ax.set_xlim((0, 5))
-                ax.plot(new_rad, just_one, color="purple", linewidth=2.5, label="intermediate fit")  # c=c,d=d,*popt
+                ax.plot(new_rad, just_one, color="darkviolet", linewidth=4, label="intermediate fit")  # c=c,d=d,*popt
 
                 [pa, pb, pc, pd, pe, pf, pg, ph, l] = orbgroup_pseudoparams[group_ind]
                 new_rad = np.linspace(0, 8, 100)
-                ax.plot(new_rad, func_for_rad(new_rad, pa, pb, pc, pd, pe, pf, pg, ph, l=l), color="red", linewidth=1,
+                ax.plot(new_rad, func_for_rad(new_rad, pa, pb, pc, pd, pe, pf, pg, ph, l=l), color="firebrick", linewidth=4,
                         label="Pseudo orbital")
 
                 # plot the just guassian fit
-                ax.plot(new_rad, func_for_rad(new_rad, r_a, r_b, r_c, r_d, r_e, r_f, r_g, r_h, l=l), color='#db61ed',
-                        linewidth=2.5, label="Final gaus fit")
-                plt.ylim((-0.001, 0.002))
-                ax.set_xlim((0, 4))
+                ax.plot(new_rad, func_for_rad(new_rad, r_a, r_b, r_c, r_d, r_e, r_f, r_g, r_h, l=l), color='darkorange',
+                        linewidth=4, label="Final gaus fit")
+                plt.ylim((-0.0005, 0.0015))
+                ax.set_xlim((0, 3.5))
                 # print("showing plot")
 
-                ax.set_xlabel("Radius (Å)")
-                ax.set_ylabel("Radial part of orbital")
+                ax.set_xlabel("Radius (Å)",fontsize=16)
+                ax.set_ylabel("Radial part of orbital (a.u.)",fontsize=14)
+                ax.set_yticks([])
+                ax.tick_params(axis='x', which='both', labelsize=12)
                 ax.legend()
                 plt_subplots.append(fig)
                 if plot_orbs:
@@ -8515,6 +8551,7 @@ class COGITO(object):
         recip_orbitalWF = self.get_kdep_reciporbs(0)  # for kpt=[0,0,0]
         # self.one_orbitalWF = self.recip_to_real(recip_orbitalWF)
         self.one_orbWFrecip = recip_orbitalWF
+
 
     def make_fit_wannier(self):
         
@@ -10378,7 +10415,13 @@ def combine_and_save_plots(plots, filename="combined_plot.png", layout=None):
             axes[i].set_xlabel(ax.get_xlabel())
             axes[i].set_ylabel(ax.get_ylabel())
             axes[i].set_title(ax.get_title())
-            axes[i].legend()
+            axes[i].set_yticks(ax.get_yticks()) # save incase is nothing
+            axes[i].legend(fontsize=12)
+
+            # make fonts larger
+            axes[i].tick_params(axis='x', labelsize=12)
+            axes[i].xaxis.label.set_size(16)
+            axes[i].yaxis.label.set_size(14)
     
     plt.tight_layout()
     plt.savefig(filename)
@@ -10646,7 +10689,7 @@ class Tee: # just to print to terminal and save output to file
 def run_cogito(directory,save_metadata:bool=True, invariant=True, irreducible_grid=True, verbose=0, tag="", include_excited=1, calc_nrms=False, save_orb_converg_info:bool=True,
                          orbfactor=1.0, num_steps=50, num_outer=4, plot_orbs = False,
                          min_proj=0.01, band_opt=True,orb_opt=True,orb_orth=False,start_from_orbnpy = False,plot_projBS = False,plot_projDOS=False,orbs = None,save_orb_data=False,
-                         save_orb_figs=False,minimum_orb_energy: float=-60,min_duplicate_energy:float=-60, wannier_fit=True,add_weight:float=1.0):
+                         save_orb_figs=False,minimum_orb_energy: float=-60,min_duplicate_energy:float=-60, wannier_fit=True,add_weight:float=1.0,prec:float=0.2):
     '''
     Runs COGITO. See generate_TBmodel() for a description of all the other arguments.
 
@@ -10690,6 +10733,7 @@ def run_cogito(directory,save_metadata:bool=True, invariant=True, irreducible_gr
             "min_duplicate_energy": min_duplicate_energy,
             "wannier_fit": wannier_fit,
             "add_weight": add_weight,
+            "precision": prec,
         }
 
         # save metadata
@@ -10709,7 +10753,7 @@ def run_cogito(directory,save_metadata:bool=True, invariant=True, irreducible_gr
                             save_orb_converg_info = save_orb_converg_info,orbfactor = orbfactor, num_steps = num_steps, num_outer = num_outer,
                             plot_orbs = plot_orbs,band_opt = band_opt, orb_opt = orb_opt, min_proj = min_proj,
                             start_from_orbnpy = start_from_orbnpy,save_orb_figs = save_orb_figs,
-                            minimum_orb_energy = minimum_orb_energy, min_duplicate_energy = min_duplicate_energy,wannier_fit=wannier_fit,add_weight=add_weight)
+                            minimum_orb_energy = minimum_orb_energy, min_duplicate_energy = min_duplicate_energy,wannier_fit=wannier_fit,add_weight=add_weight,prec=prec)
 
             if COGITOmodel.spin_polar:  # rerun with spin=1 for magnetic calculations
                 COGITOmodel = COGITO(directory, spin=1)
@@ -10718,7 +10762,7 @@ def run_cogito(directory,save_metadata:bool=True, invariant=True, irreducible_gr
                             save_orb_converg_info = save_orb_converg_info,orbfactor = orbfactor, num_steps = num_steps, num_outer = num_outer,
                             plot_orbs = plot_orbs,band_opt = band_opt, orb_opt = orb_opt, min_proj = min_proj,
                             start_from_orbnpy = start_from_orbnpy,save_orb_figs = save_orb_figs,
-                            minimum_orb_energy = minimum_orb_energy, min_duplicate_energy = min_duplicate_energy,wannier_fit=wannier_fit,add_weight=add_weight)
+                            minimum_orb_energy = minimum_orb_energy, min_duplicate_energy = min_duplicate_energy,wannier_fit=wannier_fit,add_weight=add_weight,prec=prec)
 
     else: # just run without saving any meta data
         COGITOmodel = COGITO(directory)
@@ -10729,7 +10773,7 @@ def run_cogito(directory,save_metadata:bool=True, invariant=True, irreducible_gr
                                      num_outer=num_outer,
                                      plot_orbs=plot_orbs, band_opt=band_opt, orb_opt=orb_opt, min_proj=min_proj,
                                      start_from_orbnpy=start_from_orbnpy, save_orb_figs=save_orb_figs,
-                                     minimum_orb_energy=minimum_orb_energy, min_duplicate_energy=min_duplicate_energy,wannier_fit=wannier_fit,add_weight=add_weight)
+                                     minimum_orb_energy=minimum_orb_energy, min_duplicate_energy=min_duplicate_energy,wannier_fit=wannier_fit,add_weight=add_weight,prec=prec)
 
         if COGITOmodel.spin_polar:  # rerun with spin=1 for magnetic calculations
             COGITOmodel = COGITO(directory, spin=1)
@@ -10740,7 +10784,7 @@ def run_cogito(directory,save_metadata:bool=True, invariant=True, irreducible_gr
                                          num_outer=num_outer,
                                          plot_orbs=plot_orbs, band_opt=band_opt, orb_opt=orb_opt, min_proj=min_proj,
                                          start_from_orbnpy=start_from_orbnpy, save_orb_figs=save_orb_figs,
-                                         minimum_orb_energy=minimum_orb_energy, min_duplicate_energy=min_duplicate_energy,wannier_fit=wannier_fit,add_weight=add_weight)
+                                         minimum_orb_energy=minimum_orb_energy, min_duplicate_energy=min_duplicate_energy,wannier_fit=wannier_fit,add_weight=add_weight,prec=prec)
 
 
 def main(argv=None):
@@ -10772,6 +10816,7 @@ def main(argv=None):
     cogito_args.add_argument("--min_duplicate_en",type=float,help="The lower limit to add semi-core states when there is another valence state of the same l quantum number in the POTCAR into the COGITO basis.",default=-80)
     cogito_args.add_argument("--old_bloch_fit",help="If called, performs the iterations and fit using the approximate local orbitals from the Bloch orbital at k=0, otherwise just directly uses the Wannier orbitals.",action='store_true') #not #
     cogito_args.add_argument("--increase_weight",type=float,help="Is multiplied by the weights for localizing the atomic orbitals fit to the Wannier orbitals. Setting >1 will generally make more localized, while <1 will make more diffuse up to the natural delocalization of the initial Wannier orbitals. However, all weights are faded out over outer_steps.",default=1.0)
+    cogito_args.add_argument("--prec",type=float,help="The precision of the Wannier grid.",default=0.25)
 
 
     args = cogito_args.parse_args(argv) # if args_manual==None then should take from command line
@@ -10781,7 +10826,7 @@ def main(argv=None):
                         save_orb_converg_info =not args.no_save_converg,orbfactor = args.orbfactor, num_steps = args.num_steps, num_outer = args.num_outer,
                         plot_orbs = args.plot_orbs,band_opt =not args.no_band_opt, orb_opt =not args.no_orb_opt, min_proj = args.min_proj,
                         start_from_orbnpy = args.start_orbnpy,save_orb_figs = args.save_orb_figs,
-                        minimum_orb_energy = args.minimum_orb_en, min_duplicate_energy = args.min_duplicate_en, wannier_fit = not args.old_bloch_fit,add_weight=args.increase_weight)
+                        minimum_orb_energy = args.minimum_orb_en, min_duplicate_energy = args.min_duplicate_en, wannier_fit = not args.old_bloch_fit,add_weight=args.increase_weight,prec=args.prec)
 
 if __name__ == "__main__":
     raise SystemExit(main())
