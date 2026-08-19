@@ -114,10 +114,10 @@ def _card_content_html(entry, module, filetype, srcdir='', depth=0):
 
 
 def _box_style(tags):
-    if 'plot' in tags:
-        color = '#7d3c98'
-    elif 'quality' in tags:
+    if 'quality' in tags:
         color = '#2471a3'
+    elif 'plot' in tags:
+        color = '#7d3c98'
     elif 'debug' in tags:
         color = '#b7950b'
     elif 'old' in tags:

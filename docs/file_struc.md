@@ -7,7 +7,7 @@ But in my experiance, predominately using LLMs makes gaining an intutive sense f
 To try and achieve this goal, I have created this interactive visualization of different file inputs and outputs of my different COGITO modules. I hope you enjoy clicking through them and this proves to be a handy reference for understanding the various files of COGITO.
 <br>
 <br>
-The boxes are bolded if the input/output file is required. The boxes are colored purple for image files, blue for quality accessment files, and amber for debug/developer files. This is still a bit underdevelopment and as such there may be small errors here and there. For some ridiculous rendering go click 'bond_cohp_plot.html' in the COGITOpost output section (it may take a second to load).
+The boxes are bolded if the input/output file is required. If the file is somewhat deprecated, it is listed at the end in a thinner box. The boxes are colored blue for quality accessment files, purple for image files, and amber for debug/developer files. This is still a bit underdevelopment and as such there may be small errors here and there. For some ridiculous rendering go click 'bond_cohp_plot.html' in the COGITOpost output section (it may take a second to load).
 
 ## COGITO
 
