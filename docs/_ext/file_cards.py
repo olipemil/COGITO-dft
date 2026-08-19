@@ -114,15 +114,22 @@ def _card_content_html(entry, module, filetype, srcdir='', depth=0):
 
 
 def _box_style(tags):
-    if 'image' in tags:
-        color = '#2471a3'
+    if 'plot' in tags:
+        color = '#7d3c98'
     elif 'quality' in tags:
-        color = '#c0392b'
+        color = '#2471a3'
     elif 'debug' in tags:
         color = '#b7950b'
+    elif 'old' in tags:
+        color = '#888888'
     else:
         color = 'var(--color-foreground-primary)'
-    bw = '2.5px' if 'required' in tags else '1.5px'
+    if 'required' in tags:
+        bw = '3px'
+    elif 'old' in tags:
+        bw = '1px'
+    else:
+        bw = '2px'
     fw = 'bold'  if 'required' in tags else 'normal'
     return color, bw, fw
 

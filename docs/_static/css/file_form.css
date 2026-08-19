@@ -168,9 +168,9 @@ body[data-theme="dark"] .tab-set > .tab-content {
   --tag-required:    #c0392b;
   --tag-quality:     #2471a3;
   --tag-optional:    #6c757d;
-  --tag-input:       #1e8449;
-  --tag-output:      #7d3c98;
-  --tag-plot:        #d35400;
+  --tag-debug:       #b7950b;
+  --tag-old:         #888888;
+  --tag-plot:        #7d3c98;
 }
 
 /* --- Module section header --- */
@@ -243,8 +243,8 @@ body[data-theme="dark"] .tab-set > .tab-content {
 .file-tag.required { background-color: var(--tag-required); }
 .file-tag.quality  { background-color: var(--tag-quality);  }
 .file-tag.optional { background-color: var(--tag-optional); }
-.file-tag.input    { background-color: var(--tag-input);    }
-.file-tag.output   { background-color: var(--tag-output);   }
+.file-tag.debug    { background-color: var(--tag-debug);    }
+.file-tag.old      { background-color: var(--tag-old);      }
 .file-tag.plot     { background-color: var(--tag-plot);     }
 
 /* --- Left/right card body layout --- */

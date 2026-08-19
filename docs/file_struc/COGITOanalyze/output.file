@@ -1,6 +1,6 @@
 @file{orb_change,
 file_name="orb_change<tag>.png",
-tags=['optional','output'],
+tags=['optional','output','plot'],
 run_with=["analyze_orb_converg_info()","analyze_all()"],
 run_CLI="COGITOanalyze.py --dir DIR",
 skip_CLI="COGITOanalyze.py --dir DIR --no_make_change_plot",

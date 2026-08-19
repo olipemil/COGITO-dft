@@ -18,28 +18,6 @@ needed_tags="file_type='npy' (default), version>=0.2.0",
 more_info="Orbital overlap matrix parameters in the same format as TBparams. Required alongside TBparams and tb_input by COGITOpost to initialize the TB model.",
 }
 
-@file{TBparamsold,
-file_name="TBparams<tag>.txt",
-tags=['output'],
-run_with=["COGITO.get_TBparameter()","COGITO.generate_TBmodel()","run_cogito()"]
-run_CLI="COGITO.py --dir DIR --file_type 'txt'",
-skip_CLI="COGITO.py --dir DIR",
-needed_tags="file_type='txt'",
-more_info="This is depreciated from default in v0.2.0, where parameters are saved to npy files. Tight-binding hopping parameters in a Wannier90-style format. Contains real and imaginary parts for each orbital pair and translation vector. Primary input to COGITOpost for all band structure and DOS calculations.",
-file_img='PbO/TBparams.txt',
-}
-
-@file{overlapsold,
-file_name="overlaps<tag>.txt",
-tags=['output'],
-run_with=["COGITO.get_TBparameter()","COGITO.generate_TBmodel()","run_cogito()"],
-run_CLI="COGITO.py --dir DIR --file_type 'txt'",
-skip_CLI="COGITO.py --dir DIR",
-needed_tags="file_type='txt'",
-more_info="This is depreciated from default in v0.2.0, where parameters are saved to npy files. Orbital overlap matrix parameters in the same format as TBparams. Required alongside TBparams and tb_input by COGITOpost to initialize the TB model.",
-file_img='PbO/overlaps.txt',
-}
-
 @file{tb_input,
 file_name="tb_input<tag>.txt",
 tags=['required','output'],
@@ -77,7 +55,7 @@ run_with=["COGITO.generate_TBmodel()","run_cogito()"],
 run_CLI="COGITO.py --dir DIR",
 skip_CLI="COGITO.py --dir DIR --no_save_converg",
 needed_tags="save_orb_converg_info=True (default), start_from_orbnpy=False (default)",
-more_info="JSON file tracking orbital convergence across outer loops. Fields include: orb_type, orb_rad, orb_change, orb_change_periter, radial_change_periter, bloch_nrmse_iter, bloch_nme_iter, gaus_fit_error, init_orb_energy. Useful for diagnosing slow convergence or poor orbital fits.",
+more_info="JSON file tracking orbital convergence across outer loops. Fields include: orb_type, orb_rad, orb_change, orb_change_periter, radial_change_periter, fit_nrmse_iter, fit_nme_iter, gaus_fit_error, proj_nrmse_iter, proj_nme_iter, intermed_fit,  init_orb_energy. Useful for diagnosing slow convergence or poor orbital fits.",
 file_img='PbO/orb_converg_info.json',
 }
 
@@ -103,67 +81,99 @@ more_info="Log of the stdout and stderr printed to terminal from the run, captur
 file_img='PbO/COG_output.txt',
 }
 
-@file{fit_cogito,
-file_name="fit_cogito<tag>.png",
-tags=['optional','output','debug'],
-run_with=["COGITO.fit_to_atomic_orb()","COGITO.generate_TBmodel()","run_cogito()"],
+@file{fit_wannier_cogito,
+file_name="fit_wannier_cogito<tag>.png",
+tags=['optional','output','quality','debug','plot'],
+run_with=["COGITO.fit_local_wannier()","COGITO.generate_TBmodel()","run_cogito()"],
 run_CLI="COGITO.py --dir DIR --save_orb_figs",
 needed_tags="save_orb_figs=True",
-more_info="Plots the fiting of the numerical Bloch orbital to analytical atomic orbitals. Useful for visually checking whether the fit/analytical Bloch atomic orbital (red dots) captured the numerical BLoch orbital (green dots) correctly. Can also check for deviation between gauss+exp fit (purple) and final guassian fit (pink). Check this file if COGITOanalyze returns error (or you see problems) related to the orb_converg_info.json. See COGITO paper Sec. II.3 and Fig. 4 for more info.",
+more_info="Plots the fitting of the Wannier orbitals to analytical atomic orbitals. Useful for visually checking whether the intermediate and final gaussian fit (purple and orange lines) captured the numerical Wannier orbital (gray dots) correctly. The Wannier dots are colored according to the weights used in the fitting. These weights are lower when the spherical harmonic is low, which causes greater uncertainty. Check this file if COGITOanalyze returns error (or you see problems) related to the orb_converg_info.json. See COGITO paper Sec. II.3 and Fig. 4 for more info.",
+file_img='PbO/fit_wannier_cogito.png',
+}
+
+@file{TBparamsold,
+file_name="TBparams<tag>.txt",
+tags=['output','old'],
+run_with=["COGITO.get_TBparameter()","COGITO.generate_TBmodel()","run_cogito()"]
+run_CLI="COGITO.py --dir DIR --file_type 'txt'",
+skip_CLI="COGITO.py --dir DIR",
+needed_tags="file_type='txt'",
+more_info="This is deprecated from default in v0.2.0, where parameters are saved to npy files. Tight-binding hopping parameters in a Wannier90-style format. Contains real and imaginary parts for each orbital pair and translation vector. Primary input to COGITOpost for all band structure and DOS calculations.",
+file_img='PbO/TBparams.txt',
+}
+
+@file{overlapsold,
+file_name="overlaps<tag>.txt",
+tags=['output','old'],
+run_with=["COGITO.get_TBparameter()","COGITO.generate_TBmodel()","run_cogito()"],
+run_CLI="COGITO.py --dir DIR --file_type 'txt'",
+skip_CLI="COGITO.py --dir DIR",
+needed_tags="file_type='txt'",
+more_info="This is deprecated from default in v0.2.0, where parameters are saved to npy files. Orbital overlap matrix parameters in the same format as TBparams. Required alongside TBparams and tb_input by COGITOpost to initialize the TB model.",
+file_img='PbO/overlaps.txt',
+}
+
+@file{fit_cogito,
+file_name="fit_cogito<tag>.png",
+tags=['optional','output','quality','debug','old','plot'],
+run_with=["COGITO.fit_to_atomic_orb()","COGITO.generate_TBmodel()","run_cogito()"],
+run_CLI="COGITO.py --dir DIR --save_orb_figs --old_bloch_fit",
+needed_tags="save_orb_figs=True",
+more_info="Deprecated since v0.3.0. But can still run by adding --old_bloch_fit in CLI. Plots the fiting of the numerical Bloch orbital to analytical atomic orbitals. Useful for visually checking whether the fit/analytical Bloch atomic orbital (red dots) captured the numerical BLoch orbital (green dots) correctly. Can also check for deviation between gauss+exp fit (purple) and final guassian fit (pink). Check this file if COGITOanalyze returns error (or you see problems) related to the orb_converg_info.json. See COGITO paper Sec. II.3 and Fig. 4 for more info.",
 file_img='PbO/fit_cogito.png',
 }
 
 @file{init_cogito,
 file_name="init_cogito<tag>.png",
-tags=['optional','output','debug'],
+tags=['optional','output','old','plot'],
 run_with=["COGITO.converge_orbs_recip()","COGITO.generate_TBmodel()","run_cogito()"],
-run_CLI="COGITO.py --dir DIR --save_orb_figs --verb 2",
+run_CLI="COGITO.py --dir DIR --save_orb_figs --verb 2 --old_bloch_fit",
 needed_tags="save_orb_figs=True",
-more_info="Plots data saved to all_converge_data.json (see for more info). Not easily interpreted in Bloch form, but variant which uses the local Wannier orbital form was used to create Fig. 1 in the COGITO manuscript.",
+more_info="Deprecated since v0.3.0. But can still run by adding --old_bloch_fit in CLI. Plots data saved to all_converge_data.json (see for more info). Not easily interpreted in Bloch form, but variant which uses the local Wannier orbital form was used to create Fig. 1 in the COGITO manuscript.",
 file_img='PbO/init_cogito.png',
 }
 
 @file{all_converge_data,
 file_name="all_converge_data<tag>.json",
-tags=['optional','output','debug'],
+tags=['optional','output','old'],
 run_with=["COGITO.converge_orbs_recip()","COGITO.generate_TBmodel()","run_cogito()"],
-run_CLI="COGITO.py --dir DIR --save_orb_figs --verb 2",
+run_CLI="COGITO.py --dir DIR --save_orb_figs --verb 2 --old_bloch_fit",
 needed_tags="save_orb_data=True",
-more_info="JSON file containing the raw numerical orbital radial data sampled along the line between the central atom and its nearest neighbor, at each convergence iteration. Intended for generating COGITO variance figures; not generally useful in routine runs. A variant of this file is all_wannier_data.json, which is made from make_fit_wannier(). This is generally too expensive/tedious to generate, but was used to make Fig. 1 in COGITO manuscript.",
+more_info="Deprecated since v0.3.0. But can still run by adding --old_bloch_fit in CLI. JSON file containing the raw numerical orbital radial data sampled along the line between the central atom and its nearest neighbor, at each convergence iteration. Intended for generating COGITO variance figures; not generally useful in routine runs. A variant of this file is all_wannier_data.json, which is made from make_fit_wannier(). This is generally too expensive/tedious to generate, but was used to make Fig. 1 in COGITO manuscript.",
 file_img='PbO/all_converge_data.json',
 }
 
 @file{converg_orbnrmse,
 file_name="converg_orbnrmse<tag>.npy",
-tags=['output','quality'],
+tags=['output','quality','old'],
 run_with=["COGITO.test_initialorbs()"],
-more_info="Numpy array of orbital NRMSE values across outer convergence loops and orbital size factors (orbfactor). Shape: (num_outer, num_fac, num_orbs). Used to assess sensitivity of orbital convergence quality to the initial orbital radius.",
+more_info="This (and other converg_*.npy) is somewhat deprecated. All orbital convergence info can be obtained from orb_converg_info.json; although, these do not vary starting radii (lack the num_fac dimension). Numpy array of orbital NRMSE values across outer convergence loops and orbital size factors (orbfactor). Shape: (num_outer, num_fac, num_orbs). Used to assess sensitivity of orbital convergence quality to the initial orbital radius.",
 }
 
 @file{converg_radialnrmse,
 file_name="converg_radialnrmse<tag>.npy",
-tags=['output','quality'],
+tags=['output','quality','old'],
 run_with=["COGITO.test_initialorbs()"],
 more_info="Numpy array of radial NRMSE values across outer loops and orbfactors. Companion to converg_orbnrmse, measuring the radial (rather than 3D Bloch) convergence error.",
 }
 
 @file{converg_orbnme,
 file_name="converg_orbnme<tag>.npy",
-tags=['output','quality'],
+tags=['output','quality','old'],
 run_with=["COGITO.test_initialorbs()"],
 more_info="Numpy array of orbital normalized mean error (NME, signed) across outer loops and orbfactors. Used alongside NRMSE to detect systematic bias in the orbital fit.",
 }
 
 @file{converg_radialnme,
 file_name="converg_radialnme<tag>.npy",
-tags=['output','quality'],
+tags=['output','quality','old'],
 run_with=["COGITO.test_initialorbs()"],
 more_info="Numpy array of radial NME values across outer loops and orbfactors. Signed error companion to converg_radialnrmse.",
 }
 
 @file{converg_rad,
 file_name="converg_rad<tag>.npy",
-tags=['output','quality'],
+tags=['output','quality','old'],
 run_with=["COGITO.test_initialorbs()"],
 more_info="Numpy array of converged orbital radii across outer loops and orbfactors. Shape: (num_outer+1, num_fac, num_orbs). The first index is the initial radius (from POTCAR), subsequent indices are post-convergence radii. Shows how much the orbital radius shifts from the POTCAR starting point.",
 }
