@@ -19,7 +19,7 @@ from functools import partial
 import plotly.graph_objects as go
 import itertools
 
-dist_version = "0.3.11"
+dist_version = "0.3.12"
 
 # try parallelizing stuff
 import os
