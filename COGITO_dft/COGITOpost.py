@@ -384,6 +384,8 @@ class COGITO_TB_Model(object):
             file (str): Orbital file.
         """
 
+        from scipy.special import factorial2
+
         orbital_coeffs = np.load(self.directory + "orbitals"+self.file_suff+".npy")[:,:-1]
         sph_harm_key = np.load(self.directory + "orbitals"+self.file_suff+".npy")[:,-1]
         self.recip_orbcoeffs = orbital_coeffs
@@ -400,16 +402,22 @@ class COGITO_TB_Model(object):
             [obk, odk, ofk, ohk] = 1 / 2 / np.array([bk, dk, fk, hk]) ** 2
 
             # switch to real space coefficients
+            #bk = 1 / 4 / b
             [ob,od,of,oh] = 1/4/np.array([obk,odk,ofk,ohk])
-            #ak = 2**(-3/2-l)* a* b**(-3/2-l)
-            [oa, oc, oe, og] = np.array([oak,ock,oek,ogk]) * 2**(3/2+l) * np.array([ob,od,of,oh])**(3/2+l)
+            #ak = np.pi ** (1 / 2) * 2 ** (-2 - l) * a * b ** (-3 / 2 - l)
+            [oa, oc, oe, og] = np.array([oak, ock, oek, ogk]) / (np.pi**(1/2) * 2**(-2-l) * np.array([ob, od, of, oh]) ** (-3/2-l))
 
             fnt_coef = np.array([oa, oc, oe, og])
+            exp_coef = np.array([ob, od, of, oh])
+            gaus_norm = factorial2(int(1 + 2 * l)) * np.pi ** (1 / 2) * 2 ** (-2 - l) * np.sum(
+                fnt_coef[:, None] * fnt_coef[None, :] * (exp_coef[:, None] + exp_coef[None, :]) ** (-3 / 2 - l))
+
+            fnt_coef = np.array([oa, oc, oe, og]) / gaus_norm ** (1 / 2)
             exp_coef = np.array([ob, od, of, oh])
             #gaus_norm = factorial2(1+2*l)*np.pi**(1/2)*2**(-2-l)*np.sum(fnt_coef[:,None]*fnt_coef[None,:]*(exp_coef[:,None]+exp_coef[None,:])**(-3/2-l))
             #fnt_coef = np.array([oa, oc, oe, og])/gaus_norm**(1/2)
             #exp_coef = np.array([ob, od, of, oh])
-            avg_rad = 1 / 2 * math.factorial(1 + int(l)) * np.sum(fnt_coef[:, None] * fnt_coef[None, :] * (exp_coef[:, None] + exp_coef[None, :]) ** (-2 - l/2))  # analytical calc
+            avg_rad = 1 / 2 * math.factorial(1 + int(l)) * np.sum(fnt_coef[:, None] * fnt_coef[None, :] * (exp_coef[:, None] + exp_coef[None, :]) ** (-2 - l))  # analytical calc
             orb_radii[orb] = avg_rad
 
             # convert back to a/b*e^-1/2(x/b)^2 format from a*e^-bx^2 format
@@ -420,6 +428,7 @@ class COGITO_TB_Model(object):
 
         self.real_orbcoeffs = real_orbcoeffs
         self.orb_radii = orb_radii
+        #print(self.orb_radii)
 
     def normalize_params(self):
         """
@@ -589,6 +598,129 @@ class COGITO_TB_Model(object):
         return real_orbs
 
     @staticmethod
+    def make_wf_supercell(self,orbnums,orbcoeffs,kvec,celldim,all_atoms=True):
+        """
+        This function is for creating the (partial) wavefunction with k-vec phase modulation in a given supercell.
+
+        Args:
+            self:
+            orbnums (list): A integer list of the orbital indices w.r.t the tb_input file. (ex: [0, 1, 4, 5])
+            orbcoeffs (list): A complex list of orbital coefficients. (ex: [1.0, 1.0j, 1.0, 1.0j])
+            kvec (list): The k-point in reduced coordinates. (ex: [0.0, 0.5, 0.5])
+            celldim (list): The dimensions of the supercell [nx, ny, nz]. Should be the lowest nxyz where nx*kx equals (or is approximately) an integer.
+                            (ex. for kvec=[0.0,0.5,0.5], celldim=[1,2,2])
+            all_atoms (bool): Whether or not include all atoms or just the atoms that have plotted orbitals in the returned atom list.
+
+        Returns:
+
+        """
+        orbnums = np.array(orbnums,dtype=int)
+        orbcoeffs = np.array(orbcoeffs)
+        kvec = np.array(kvec)
+        celldim = np.array(celldim,dtype=int)
+
+        # make a grid
+        spacing = 0.25
+
+        abc = np.linalg.norm(self._a, axis=1)
+        #print("abc:", abc)
+        grid_res = np.array(np.around( abc / spacing, decimals=0), dtype=int)
+        # print(grid_res)
+        # if res%2==0: # ensure that the number is odd so centers at zero
+        #    res = res+1
+        # grid_res = np.array([res, res, res], dtype=int)
+
+        prim_spac = 1 / (grid_res)
+        # make sure prim_spacing is the same for axes that might be swapped
+        if abs(abc[0] - abc[1]) < 0.00001:
+            prim_spac[1] = prim_spac[0]
+        if abs(abc[0] - abc[2]) < 0.00001:
+            prim_spac[2] = prim_spac[0]
+        if abs(abc[1] - abc[2]) < 0.00001:
+            prim_spac[2] = prim_spac[1]
+        cart_spac = prim_spac*abc
+
+        #grid_res = grid_res*celldim # adjust based on
+        grid_len = celldim - 1/grid_res # prim_spac * (grid_res - 1) / 2
+
+        # add a buffer to the grid so that orbital can be shown outside and so that I don't need to try with periodic boundary conditions
+        buffer = np.array([4.0,4.0,4.0])
+        num_added =  np.array(np.around( 2*buffer / cart_spac, decimals=0), dtype=int)
+        buffer = prim_spac*num_added/2
+        final_num = grid_res*celldim + num_added # adjust based on
+        #print(grid_len,buffer,final_num)
+
+        # print(prim_spac,grid_len,grid_res)
+        x, y, z = np.mgrid[-buffer[0]:grid_len[0]+buffer[0]:final_num[0] * 1j, -buffer[1]:grid_len[1]+buffer[1]:final_num[1]*1j,
+                        -buffer[2]:grid_len[2]+buffer[2]:final_num[2]*1j]
+
+        # print(x.flatten())
+        x = x.flatten()
+        y = y.flatten()
+        z = z.flatten()
+        prim_grid = np.array([x, y, z]) # [3,num points]
+        cart_grid = _red_to_cart((self._a[0], self._a[1], self._a[2]),prim_grid.T).T  # [3,num points]
+        full_wavefun = np.zeros((len(cart_grid[0])),dtype=np.complex128)
+
+        # now make the orbitals (only locally) and add them to the grid where ever they should be
+        for curind, orb in enumerate(orbnums):
+            # make local orbital grid
+            atomnum = self.orbatomnum[orb]
+            prim_center = np.array(self.primAtoms[atomnum])
+            orb_center = np.array(self.cartAtoms[atomnum])
+            #print(prim_center,orb_center)
+            orb_cart_grid = cart_grid - orb_center[:,None]
+            rad_max = 3.8 # want low enough that is inside buffer but high enough that doesn't cutoff orbital
+            mask = (orb_cart_grid[0] ** 2 + orb_cart_grid[1] ** 2 + orb_cart_grid[2] ** 2 - rad_max ** 2) < 0.00000001
+            mask = np.arange(len(orb_cart_grid[0]))[mask]
+            local_cart_grid = orb_cart_grid[:, mask]
+
+            # get spherical coordinates
+            rad = np.linalg.norm(local_cart_grid, axis=0)
+            #print(np.sort(rad))
+            rad[rad == 0] = 0.0000000001
+            theta = np.arccos(local_cart_grid[2] / rad)
+            theta[rad == 0.0000000001] = 0
+            phi = np.arctan2(local_cart_grid[1], local_cart_grid[0])
+
+            # finally, make the orbital
+            real_coeff = self.real_orbcoeffs[orb]
+            [a, b, c, d, e, f, g, h, l] = real_coeff
+            orb_peratom = self.sph_harm_key[orb]
+            angular_part = complex128funs(phi, theta, self.orb_vec[orb])
+            radial_part = func_for_rad(rad, a, b, c, d, e, f, g, h, l)
+
+            real_orb = radial_part * angular_part
+
+            # now go over all primcell translation and add the orbital to the main grid
+            for x in range(celldim[0]):
+                for y in range(celldim[1]):
+                    for z in range(celldim[2]):
+                        og_mask_ind = np.array(np.unravel_index(mask,final_num))
+                        #print(og_mask_ind.shape)
+                        ind_shift = np.array([x*grid_res[0],y*grid_res[1],z*grid_res[2]])
+                        new_mask_ind = (og_mask_ind[:,:] + ind_shift[:,None])%final_num[:,None]
+                        new_mask = np.ravel_multi_index(new_mask_ind,final_num)
+
+                        phase = np.exp(2j*np.pi * np.dot(kvec,prim_center+np.array([x,y,z])))
+                        full_wavefun[new_mask] = full_wavefun[new_mask] + orbcoeffs[curind] * phase * real_orb
+
+        # make a list of atom coordinates
+        prim_atoms = self.primAtoms
+        if not all_atoms:
+            prim_atoms = np.unique(self.primAtoms[self.orbatomnum[orbnums]],axis=0)
+        prim_atm_coords = []
+        for atm in prim_atoms:
+            # now go over all primcell translation and add the orbital to the main grid
+            for x in range(celldim[0]):
+                for y in range(celldim[1]):
+                    for z in range(celldim[2]):
+                        prim_atm_coords.append(atm+np.array([x,y,z]))
+
+        return full_wavefun, final_num, prim_spac, buffer, np.array(prim_atm_coords)
+
+
+    @staticmethod
     def plot_orbitals(self):
         gridnum = np.around(np.array(self.abc)*10*2,decimals=0)
         gridnum = [int(gridnum[0]),int(gridnum[1]),int(gridnum[2])]
@@ -756,8 +888,8 @@ class COGITO_TB_Model(object):
 
         # get the overlap and hamiltonian matrices using arrays defined in the function restrict_params()
         exp_fac = np.exp(2j * np.pi * np.matmul(self.use_vecs_to_orbs,kpt))
-        kdep_overlap = np.sum(self.use_overlaps[spin] * exp_fac,axis=2)
-        ham = np.sum(self.use_tbparams[spin] * exp_fac,axis=2)
+        kdep_overlap = np.sum(self.use_overlaps[spin] * exp_fac,axis=2) #np.around(,decimals=5)
+        ham = np.sum(self.use_tbparams[spin] * exp_fac,axis=2) #np.around(,decimals=5)
 
         # diagonalize the hamiltonian
         if self.orbs_orth == True:

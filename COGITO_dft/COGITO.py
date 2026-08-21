@@ -123,7 +123,7 @@ class COGITO(object):
             position = np.array([float(i) for i in filelines[index].strip().split()[:3]])
             #self.elements.append(element)
             # make sure the positions are in the first primitive cell
-            og_center = np.around(position,decimals=12)#_cart_to_red((self._a[0], self._a[1], self._a[2]), [new_center])[0],decimals=8)
+            og_center = np.around(position,decimals=14)#_cart_to_red((self._a[0], self._a[1], self._a[2]), [new_center])[0],decimals=8)
             prim_center =  copy.deepcopy(og_center)
             #print("first:",prim_center,self.primAtoms[atm])
             while (prim_center>=1).any() or (prim_center<0).any():
@@ -224,7 +224,7 @@ class COGITO(object):
             print("Magnetic moment per atom for sym:", tot_magmoms)
             self.atom_magmoms = tot_magmoms
             kpt_weights = vasprun.actual_kpoints_weights
-            self.kpoints = np.around(np.array(vasprun.actual_kpoints),decimals=13)
+            self.kpoints = np.around(np.array(vasprun.actual_kpoints),decimals=14)
             self.kpt_weights = np.array(kpt_weights)
             self.num_kpts = len(kpt_weights)
             self.efermi = vasprun.efermi
@@ -235,6 +235,8 @@ class COGITO(object):
             #print("eigen keys:",list(eigval.keys()))
             eigval = np.array(eigval[list(eigval.keys())[spin]])  #change with spin
             self.eigval = eigval
+
+            #print("from vasprun:",eigval)
             self.eigval[:, :, 0] = self.eigval[:, :, 0]+energy_shift#-9.3263#-5#+ 0.91587 # - self.efermi
             self.complete_dos = vasprun.complete_dos
             self.total_dos = vasprun.tdos
@@ -252,7 +254,7 @@ class COGITO(object):
             #print("dos info",self.total_dos.densities[Spin.up])
             #print(len(self.pymatenergies))
         #print("from vaspun:",self.eigval[0])
-        ''' # don't always do this cause the EIGENVAL may be form a band structure calculation
+        ''' # don't always do this cause the EIGENVAL may be from a band structure calculation
         if exists(self.directory+"EIGENVAL"): # read in from here for 6 decimals instead of 4 from vasprun.xml
             
             pyeig = Eigenval(self.directory + 'EIGENVAL')
@@ -288,6 +290,7 @@ class COGITO(object):
 
             # also save eigenenergies
             DFTeigvals = np.array(self.wavecar.band_energy)
+            #print("from wavecar:",DFTeigvals)
             if self.spin_polar:
                 DFTeigvals = DFTeigvals[spin]
             #print(DFTeigvals.shape)
@@ -5546,12 +5549,11 @@ class COGITO(object):
 
                 # shift anything on the negative faces to the positive faces
                 # print(np.around(temp_kpt,decimals=4) == -0.5)
-                if (np.around(temp_kpt,
-                              decimals=8) == -0.5).any():  # determine if the point is on the positive or negative side of the cube
+                if (np.around(temp_kpt, decimals=8) == -0.5).any():  # determine if the point is on the positive or negative side of the cube
                     num_trues = 0
                     while num_trues < 2:
                         # print("edge point",temp_kpt)
-                        temp_kpt = np.around(temp_kpt, decimals=12)
+                        temp_kpt = np.around(temp_kpt, decimals=14)
                         angle_xy = np.arctan2(temp_kpt[0], temp_kpt[1]) / np.pi * 180
                         angle_yz = np.arctan2(temp_kpt[1], temp_kpt[2]) / np.pi * 180
                         angle_zx = np.arctan2(temp_kpt[2], temp_kpt[0]) / np.pi * 180
@@ -5580,7 +5582,7 @@ class COGITO(object):
                         ((np.abs(new_kpts[:, 1]) + 0.00001) % min_div2) < 0.0001) & (
                                     ((np.abs(new_kpts[:, 2]) + 0.00001) % min_div3) < 0.0001)
             # print(new_kpts[:,0]%min_div1,new_kpts[:,1]%min_div2,new_kpts[:,2]%min_div3)
-            new_kpts = new_kpts[fits_grid]
+            new_kpts = all_kpts[new_kpt_ind[fits_grid]]
             new_kpt_ind = new_kpt_ind[fits_grid]
             symopt_ind = np.append(symopt_ind, new_kpt_ind)
             reduc_toir = np.append(reduc_toir, np.ones(len(new_kpt_ind)) * (ir_ind + 1))
@@ -5629,12 +5631,11 @@ class COGITO(object):
                 try_kpt = opp_kpt
                 temp_kpt = copy.deepcopy(opp_kpt)
                 # print(np.around(temp_kpt,decimals=4) == -0.5)
-                if (np.around(temp_kpt,
-                              decimals=8) == -0.5).any():  # determine if the point is on the positive or negative side of the cube
+                if (np.around(temp_kpt,decimals=8) == -0.5).any():  # determine if the point is on the positive or negative side of the cube
                     num_trues = 0
                     while num_trues < 2:
                         # print("edge point",temp_kpt)
-                        temp_kpt = np.around(temp_kpt, decimals=12)
+                        temp_kpt = np.around(temp_kpt, decimals=14)
                         angle_xy = np.arctan2(temp_kpt[0], temp_kpt[1]) / np.pi * 180
                         angle_yz = np.arctan2(temp_kpt[1], temp_kpt[2]) / np.pi * 180
                         angle_zx = np.arctan2(temp_kpt[2], temp_kpt[0]) / np.pi * 180
@@ -5813,7 +5814,7 @@ class COGITO(object):
             #print(full_opt)
             #if (kpt_shifts[kpt] !=0).any():
                 #print("shift here!",kpt_shifts[kpt])
-            ir_coeffs = np.around(ireigvecs[reduc_toir[kpt]].T,decimals=14) #[orb,band]
+            ir_coeffs = ireigvecs[reduc_toir[kpt]].T#np.around(,decimals=14) #[orb,band]
             if np.isnan(ir_coeffs.flatten()).any():
                 print(kpt,sym_opt,prim_opt,reduc_kpts[kpt])
                 print(reduc_toir[kpt],irrec_kpts[reduc_toir[kpt]])
@@ -6756,6 +6757,8 @@ class COGITO(object):
                 kdep_Sij = psuedo_overlap_matrix + sum_overi
                 kdep_Sij = (kdep_Sij + np.conj(kdep_Sij).T)/2 # ensure that kdep_Sij is Hermitian
                 self.Sij[kpt] = kdep_Sij# np.around(kdep_Sij,decimals=6)
+
+
                 #eigenvalj, kdep_Dij = np.linalg.eigh(kdep_Sij)
                 # check correctness of eigen
                 # construct Aij
@@ -6763,7 +6766,7 @@ class COGITO(object):
                 #for j in range(self.num_orbs):
                 #    kdep_Aij[:, j] = kdep_Dij[:, j] / (eigenvalj[j]) ** (1 / 2)
                 
-                sqrt_overlap =  linalg.sqrtm(kdep_Sij) 
+                sqrt_overlap =  linalg.sqrtm(kdep_Sij)
                 sqrt_overlap = np.array(sqrt_overlap, dtype=np.complex128)
                 #print(coeff_overlap[:2])
                 inv_sqrt_overlap = np.linalg.inv(sqrt_overlap)
@@ -6832,16 +6835,19 @@ class COGITO(object):
             energ_weight[incld_spill>0.3] = (1-incld_spill)[incld_spill>0.3]
             energies = self.eigval[kpt][include_bands][:,0]#*energ_weight
 
-            kdep_Aij = self.Aij[kpt]
-            orth_coeff = np.matmul(np.linalg.inv(kdep_Aij),nonorth_coeff.transpose()).transpose()
-            loworth_coeff = np.array(orth_coeff).transpose()   # want columns to be eigenvectors
-            AtHA = np.matmul(loworth_coeff, np.matmul(np.diag(energies), #self.mixed_eigval[kpt], 
-                                                     np.conj(loworth_coeff).T))#np.diag(self.eigval[kpt, :self.num_orbs,0])
+            #kdep_Aij = self.Aij[kpt]
+            #orth_coeff = np.matmul(np.linalg.inv(kdep_Aij),nonorth_coeff.transpose()).transpose()
+            #loworth_coeff = np.array(orth_coeff).transpose()   # want columns to be eigenvectors
+            #AtHA = np.matmul(loworth_coeff, np.matmul(np.diag(energies), #self.mixed_eigval[kpt],
+            #                                         np.conj(loworth_coeff).T))#np.diag(self.eigval[kpt, :self.num_orbs,0])
             #AtHA = (AtHA + np.conj(AtHA).T)/2 # ensure that AtHA is Hermitian
 
             #need to make it the Hamiltonian for the generalized eigenvalue problem!!
-            conj_Aij = np.conj(self.Aij[kpt]).transpose()
-            self.hamilton[:, :, kpt] = np.matmul(np.linalg.inv(conj_Aij),np.matmul(AtHA,np.linalg.inv(self.Aij[kpt])))
+            #conj_Aij = np.conj(self.Aij[kpt]).transpose()
+            #self.hamilton[:, :, kpt] = np.matmul(np.linalg.inv(conj_Aij),np.matmul(AtHA,np.linalg.inv(self.Aij[kpt])))
+
+            kdep_Sij = self.Sij[kpt]
+            self.hamilton[:, :, kpt] = kdep_Sij @ nonorth_coeff.T @ np.diag(energies) @ np.conj(nonorth_coeff) @ kdep_Sij
 
             '''
             # get the Cogitwo basis
@@ -8458,11 +8464,9 @@ class COGITO(object):
 
             # convert to reciprocal space
             # g(k) = ∫j_l(kr)*g(r)*r^2*dr was done in mathematica to get the symbol conversion for analytical calc
-            ak = np.pi ** (1 / 2) * 2 ** (-2 - l) * a * b ** (
-                        -3 / 2 - l)  # *(self.num_kpts/self.vol)**(1/4)#* self.vol**(1/4)/np.pi**(3/4)
+            ak = np.pi ** (1 / 2) * 2 ** (-2 - l) * a * b ** (-3 / 2 - l)  # *(self.num_kpts/self.vol)**(1/4)#* self.vol**(1/4)/np.pi**(3/4)
             bk = 1 / 4 / b
-            ck = np.pi ** (1 / 2) * 2 ** (-2 - l) * c * d ** (
-                        -3 / 2 - l)  # *(self.num_kpts/self.vol)**(1/4)#* self.vol**(1/4)/np.pi**(3/4)
+            ck = np.pi ** (1 / 2) * 2 ** (-2 - l) * c * d ** (-3 / 2 - l)  # *(self.num_kpts/self.vol)**(1/4)#* self.vol**(1/4)/np.pi**(3/4)
             dk = 1 / 4 / d
             ek = np.pi ** (1 / 2) * 2 ** (-2 - l) * e * f ** (-3 / 2 - l)
             fk = 1 / 4 / f
