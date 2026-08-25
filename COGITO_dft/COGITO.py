@@ -123,7 +123,7 @@ class COGITO(object):
             position = np.array([float(i) for i in filelines[index].strip().split()[:3]])
             #self.elements.append(element)
             # make sure the positions are in the first primitive cell
-            og_center = np.around(position,decimals=14)#_cart_to_red((self._a[0], self._a[1], self._a[2]), [new_center])[0],decimals=8)
+            og_center = np.around(position,decimals=12)#_cart_to_red((self._a[0], self._a[1], self._a[2]), [new_center])[0],decimals=8)
             prim_center =  copy.deepcopy(og_center)
             #print("first:",prim_center,self.primAtoms[atm])
             while (prim_center>=1).any() or (prim_center<0).any():
@@ -224,7 +224,7 @@ class COGITO(object):
             print("Magnetic moment per atom for sym:", tot_magmoms)
             self.atom_magmoms = tot_magmoms
             kpt_weights = vasprun.actual_kpoints_weights
-            self.kpoints = np.around(np.array(vasprun.actual_kpoints),decimals=14)
+            self.kpoints = np.around(np.array(vasprun.actual_kpoints),decimals=13)
             self.kpt_weights = np.array(kpt_weights)
             self.num_kpts = len(kpt_weights)
             self.efermi = vasprun.efermi
@@ -338,7 +338,7 @@ class COGITO(object):
         self.min_rad={}
 
 
-    def generate_TBmodel(self, invariant: bool = True, irreducible_grid=True, verbose=0, tag="", include_excited=1, calc_nrms=False, save_orb_converg_info:bool=True,
+    def generate_TBmodel(self, invariant: bool = True, irreducible_grid=True, verbose=0, tag="", include_excited=1, vary_excited_by_atm: bool=False, min_unocc_orbs:int=4, calc_nrms=False, save_orb_converg_info:bool=True,
                          orbfactor=1.0, num_steps=50, num_outer=4, plot_orbs = False,
                          min_proj=0.01, band_opt=True,orb_opt=True,orb_orth=False,start_from_orbnpy = False,plot_projBS = False,plot_projDOS=False,orbs = None,
                          save_orb_data=False,save_orb_figs=False,minimum_orb_energy: float=-60,min_duplicate_energy:float=-60, file_type: str="npy",wannier_fit=True,add_weight:float=1.0,prec:float=0.2):
@@ -355,6 +355,10 @@ class COGITO(object):
                         (0) Includes no excited orbital states (only ones which are partially occupied in isolated atom).
                         (1) Includes some excited states (if the POTCAR has the excited states + another higher one of the same l) (generally includes p orbital for d block).
                         (2) Includes maximally recommended states (condition of 1 + if the energy listed is the same as in isolated atom) (generally includes p orbitals for 1&2nd row).
+            vary_excited_by_atm (bool): Change include_excited based on the orbital occupation of the atom. Reduces include_excited by 1 if the atom has >min_unocc_orbs unoccupied orbital states in the valence shell.
+            min_unocc_orbs (int): The number of unoccupied orbitals an atom needs to have before reducing include_excited for said atom.
+                                    In other words, if an atom has less unoccupied orbitals in it's valence shell than min_unocc_orbs, additional excited states will likely be added.
+                                    The default of 4 is selected such that the 7B (Mn) row won't have excited p orbitals while the 8B (Fe) row will.
             calc_nrms (bool): Extra error analysis that requires more runtime to generate. Correlates well with the square root projection spilling. Both spilling and nrmse are output to "error_output"+tag+".txt" during all runs.
             save_orb_converg_info (bool): Creates the file 'orb_converg_info.json'.
             orbfactor (float): Multipled by the radial part of the pseudo radial orbital to either shrink or grow them.
@@ -414,7 +418,7 @@ class COGITO(object):
         if self.verbose > 0:
             print("cartesian atom positions:",self.cartAtoms)
         print("setting up intitial orbitals")
-        self.get_orbs_fromPOT(orbfactor=orbfactor,invariant=invariant)
+        self.get_orbs_fromPOT(orbfactor=orbfactor,invariant=invariant,vary_excited_by_atm=vary_excited_by_atm, min_unocc_orbs=min_unocc_orbs)
         self.get_Qab()
         #self.fit_to_atomic_orb(plot_orbs=plot_orbs)
         self.get_kdep_recipprojs(0)
@@ -483,7 +487,7 @@ class COGITO(object):
 
                 self.orig_radial[orb] = orig_radial / ae_overlap ** (1 / 2)
             self.recip_orbcoeffs = orbital_coeffs
-            self.cur_radial = self.orig_radial
+            self.cur_radial = copy.deepcopy(self.orig_radial)
             self.recip_pseudo = self.spher_bessel_trans(orbital_coeffs)
             self.recip_pseudo_grid = self.recip_rad_grid
 
@@ -902,7 +906,7 @@ class COGITO(object):
         '''
         
 
-    def get_WFdata_fromPOT(self):
+    def get_WFdata_fromPOT(self,vary_excited_by_atm: bool=False, min_unocc_orbs:int=4):
         """
         Function which reads the pseudo and ae orbital information from the POTCAR.
         Creates the global variables self.atmProjectordata, self.atmRecipProjdata, and self.atmPsuedoAeData.
@@ -978,21 +982,44 @@ class COGITO(object):
             # get all the energies of the atomic states
             atomic_energies = []
             atomic_occup = []
+            orbital_l = []
             last_orb_energy = [0,0,0,0] # energies for [s,p,d,f]
             for st in range(num_config):
                 energ = float(lines[config_start+st].strip().split()[3])
                 occupation = float(lines[config_start+st].strip().split()[4])
+                l = int(lines[config_start+st].strip().split()[1])
                 if self.include_excited > 1: # append everything!
                     atomic_energies.append(energ)
                     atomic_occup.append(occupation)
+                    orbital_l.append(l)
                 else: # only append energy if occupied
                     if occupation != 0:
                         atomic_energies.append(energ)
                         atomic_occup.append(occupation)
-                l = int(lines[config_start+st].strip().split()[1])
+                        orbital_l.append(l)
                 last_orb_energy[l] = energ
             atomic_energies = np.around(np.array(atomic_energies),decimals=4)
             atomic_occup = np.array(atomic_occup)
+            orbital_l = np.array(orbital_l)
+
+            full_l_occ = np.array([2,6,10,14])
+            full_occupation = full_l_occ[orbital_l]
+            unoccupied_orbs = full_occupation - atomic_occup
+            # don't include states that are fully unoccupied (already excited) or f orbitals (that way higher d orbitals are still appended (unsure whether this is necessary))
+            tot_unocc = np.sum(unoccupied_orbs[(atomic_occup != 0) & (orbital_l != 3)])
+            if self.verbose > 0:
+                print("unoccupied orbs:",unoccupied_orbs)
+                print(tot_unocc)
+            atm_adjust = 0
+            if vary_excited_by_atm and tot_unocc > min_unocc_orbs:
+                atm_adjust = -1
+                if self.include_excited == 2: # remove the unoccupied states from appended list (as it would be for include_excited=1)
+                    atomic_energies = atomic_energies[atomic_occup!=0]
+                    orbital_l = orbital_l[atomic_occup!=0]
+                    atomic_occup = atomic_occup[atomic_occup!=0]
+            if self.verbose > 0:
+                print("amount to shift include_excited:",atm_adjust)
+
             if self.verbose > 0:
                 print("atomic energies:",atomic_energies)
             
@@ -1099,18 +1126,18 @@ class COGITO(object):
                     if self.verbose > 0:
                         print("psuedo state_energy:", state_energy)
                         print("state included:",includ_state,includ_val)
-                    if self.include_excited > 0:
+                    if self.include_excited + atm_adjust > 0:
                         final_include = includ_state or includ_val
                     else:
                         final_include = includ_state
                     exclude_state = False
 
                     if final_include: # in the valance states
-                        if self.include_excited > 1 and state_energy < -30 and orb_type == "p": # mostly for adding excited p orbitals in d block
+                        if self.include_excited + atm_adjust > 1 and state_energy < -30 and orb_type == "p": # mostly for adding excited p orbitals in d block
                             set_val = set_val + 1
-                        if self.include_excited > 1 and state_energy < -40 and orb_type == "s": # mostly for adding excited s orbitals in d block
+                        if self.include_excited + atm_adjust > 1 and state_energy < -40 and orb_type == "s": # mostly for adding excited s orbitals in d block
                             set_val = set_val + 1
-                        if self.include_excited > 2 and state_energy < -15 and orb_type != 'd': # mostly for adding extra s orbital for latter p block
+                        if self.include_excited + atm_adjust > 2 and state_energy < -15 and orb_type != 'd': # mostly for adding extra s orbital for latter p block
                             set_val = set_val + 1
 
                         # exclude some low energy states (do this after final_include so that set_val is updated!)
@@ -1425,7 +1452,7 @@ class COGITO(object):
 
 
 
-    def get_orbs_fromPOT(self,orbfactor=1.0,invariant=True):
+    def get_orbs_fromPOT(self,orbfactor=1.0,invariant=True,vary_excited_by_atm: bool=False, min_unocc_orbs:int=5):
         """
         Creates the 3D initial orbitals in real space from the pseudo radial orbitals.
         Also sets the amount of orbitals by looping through atoms and their orbitals, thus intializes many orbital-dependent variables.
@@ -1434,7 +1461,7 @@ class COGITO(object):
             orbfactor (float): Multipled by the radial part of the pseudo radial orbital to either shrink or grow them.
         """
 
-        self.get_WFdata_fromPOT()
+        self.get_WFdata_fromPOT(vary_excited_by_atm, min_unocc_orbs)
         #self.projectorWF = {}
         self.min_radphitheta = {}
         self.vector_toallatoms = {}
@@ -5553,7 +5580,7 @@ class COGITO(object):
                     num_trues = 0
                     while num_trues < 2:
                         # print("edge point",temp_kpt)
-                        temp_kpt = np.around(temp_kpt, decimals=14)
+                        temp_kpt = np.around(temp_kpt, decimals=12)
                         angle_xy = np.arctan2(temp_kpt[0], temp_kpt[1]) / np.pi * 180
                         angle_yz = np.arctan2(temp_kpt[1], temp_kpt[2]) / np.pi * 180
                         angle_zx = np.arctan2(temp_kpt[2], temp_kpt[0]) / np.pi * 180
@@ -5635,7 +5662,7 @@ class COGITO(object):
                     num_trues = 0
                     while num_trues < 2:
                         # print("edge point",temp_kpt)
-                        temp_kpt = np.around(temp_kpt, decimals=14)
+                        temp_kpt = np.around(temp_kpt, decimals=12)
                         angle_xy = np.arctan2(temp_kpt[0], temp_kpt[1]) / np.pi * 180
                         angle_yz = np.arctan2(temp_kpt[1], temp_kpt[2]) / np.pi * 180
                         angle_zx = np.arctan2(temp_kpt[2], temp_kpt[0]) / np.pi * 180
@@ -6064,7 +6091,7 @@ class COGITO(object):
             shift_gpnts = og_gpnts 
             sym_gpnts = np.matmul(prim_opt,shift_gpnts.T).T - kpt_shifts[kpt]
             if is_opposite[kpt]:
-                if self.verbose > 1:
+                if self.verbose > -1:
                     print("at time sym point!",kpt)
                 sym_gpnts = -sym_gpnts
                 
@@ -7163,6 +7190,12 @@ class COGITO(object):
         #allwan_redkpt_orbs = np.empty((num_reduc, shape[1], shape[2]), dtype=np.complex128)
         totwan_redkpt_orbs = np.zeros((shape[1], shape[2]), dtype=np.complex128)
 
+        # only do over symmetry operations that are actively used
+        # should I also include time symmetry?
+        opt_ind = np.unique(symopt_ind)
+        cart_operations = cart_operations[opt_ind]
+        operations = operations[opt_ind]
+
         # transform to the reducible kpts
         num_symopt = len(cart_operations)
         for onum in range(num_symopt):
@@ -7936,7 +7969,6 @@ class COGITO(object):
             y = np.append(y, just_one)
             init_weight = np.append(init_weight, pseudo_weights)  # use more for small systems with less points
 
-            sig = 1 / np.sqrt(init_weight + 0.00001)
 
             pinit = [0.001, expcutoff / 2, 1.0, expcutoff*0.8, 1.2, 1+0.25*l]
             max_decay = 1.5 #min(1.2 + outer / 5, 1.5)
@@ -7948,11 +7980,26 @@ class COGITO(object):
                 high_bounds = [0.1, expcutoff * 3, 2, expcutoff * 3, max_decay, 2.0*(l+1)**(1/2)]
             else:
                 low_bounds = [-1.0, expcutoff * 0.05, 0.0001, expcutoff * 0.5, 1.1, 0.1]
-                high_bounds = [3.0, expcutoff * 3, 3, expcutoff * 3, max_decay, 40]
+                high_bounds = [3.0, expcutoff * 3, 5, expcutoff * 3, max_decay, 40]
                 #pinit[5] = test_cutoff * 1.0
                 pinit[2] = 0.001
                 pinit[0] = -0.001
 
+            # make a special expection for s orbitals which are lower at r=0 than r_max
+            if l==0 and max_rad !=0:
+                print("need to adjust limits for s orbital!")
+                low_bounds[5] = 0.1
+                high_bounds[2] = 0.001/just_one[0] * 10
+                print("ratio:",0.001/just_one[0])
+                pinit[2] = 0.001/just_one[0]
+
+            if l==1: # reduce weight for p orbitals points that are looking more like d orbitals near r=0
+                bad_low = (x < max_rad*0.9) & (y < (0.001-0.0001)/max_rad*x)
+                if len(x[bad_low]) > 5:
+                    print("Many low points! Their weights have been reduced")
+                    init_weight[bad_low] = init_weight[bad_low]/10
+
+            sig = 1 / np.sqrt(init_weight + 0.00001)
             pseudo_orb = func_for_rad(x, pa, pb, pc, pd, pe, pf, pg, ph, l=l)
             # also get residual standard deviation
             residuals = np.abs(y - pseudo_orb)
@@ -8109,7 +8156,7 @@ class COGITO(object):
                 orig_radial = self.cur_radial[orbgroup[0]]
                 new_radial = func_for_rad(simple_rad, r_a, r_b, r_c, r_d, r_e, r_f, r_g, r_h, l=l)
                 # align the maximums
-                orig_radial = orig_radial * np.amax(new_radial) / np.amax(orig_radial)  # scale orig_radial to align the new maximum (tends give smallest errors)
+                orig_radial = orig_radial * 0.001 / np.amax(orig_radial)  # scale orig_radial to align the new maximum (tends give smallest errors)
                 prev_orbWF = angular_part * interpolate.griddata(simple_rad,orig_radial,rad, method='cubic', fill_value=0)
 
                 diff_orb = np.abs((prev_orbWF - unk))
@@ -8308,11 +8355,16 @@ class COGITO(object):
                 ax.plot(new_rad, just_one, color="darkviolet", linewidth=4, label="intermediate fit")  # c=c,d=d,*popt
 
                 [pa, pb, pc, pd, pe, pf, pg, ph, l] = orbgroup_pseudoparams[group_ind]
-                new_rad = np.linspace(0, 8, 100)
-                ax.plot(new_rad, func_for_rad(new_rad, pa, pb, pc, pd, pe, pf, pg, ph, l=l), color="firebrick", linewidth=4,
-                        label="Pseudo orbital")
+                paw_radial = self.orig_radial[orbgroup[0]]
+                max_ind = np.argmax(paw_radial)
+                max_val = np.abs(paw_radial[max_ind])  # will always be positive though
+                if not no_node:
+                    max_val = max_val * 2
+                just_one = paw_radial / max_val * 0.001
+                ax.plot(new_rad, just_one, color="firebrick", linewidth=4, label="Pseudo orbital")
 
                 # plot the just guassian fit
+                new_rad = np.linspace(0, 8, 100)
                 ax.plot(new_rad, func_for_rad(new_rad, r_a, r_b, r_c, r_d, r_e, r_f, r_g, r_h, l=l), color='darkorange',
                         linewidth=4, label="Final gaus fit")
                 plt.ylim((-0.0005, 0.0015))
@@ -10690,10 +10742,10 @@ class Tee: # just to print to terminal and save output to file
         for s in self.streams:
             s.flush()
 
-def run_cogito(directory,save_metadata:bool=True, invariant=True, irreducible_grid=True, verbose=0, tag="", include_excited=1, calc_nrms=False, save_orb_converg_info:bool=True,
-                         orbfactor=1.0, num_steps=50, num_outer=4, plot_orbs = False,
-                         min_proj=0.01, band_opt=True,orb_opt=True,orb_orth=False,start_from_orbnpy = False,plot_projBS = False,plot_projDOS=False,orbs = None,save_orb_data=False,
-                         save_orb_figs=False,minimum_orb_energy: float=-60,min_duplicate_energy:float=-60, wannier_fit=True,add_weight:float=1.0,prec:float=0.2):
+def run_cogito(directory,save_metadata:bool=True, invariant=True, irreducible_grid=True, verbose=0, tag="", include_excited=1, vary_excited_by_atm: bool=False, min_unocc_orbs:int=5,
+                        calc_nrms=False, save_orb_converg_info:bool=True, orbfactor=1.0, num_steps=50, num_outer=4, plot_orbs = False,
+                        min_proj=0.01, band_opt=True,orb_opt=True,orb_orth=False,start_from_orbnpy = False,plot_projBS = False,plot_projDOS=False,orbs = None,save_orb_data=False,
+                        save_orb_figs=False,minimum_orb_energy: float=-60,min_duplicate_energy:float=-60, wannier_fit=True,add_weight:float=1.0,prec:float=0.2):
     '''
     Runs COGITO. See generate_TBmodel() for a description of all the other arguments.
 
@@ -10753,7 +10805,8 @@ def run_cogito(directory,save_metadata:bool=True, invariant=True, irreducible_gr
         with redirect_stdout(tee_out), redirect_stderr(tee_err):
             COGITOmodel = COGITO(directory)
             # do full algorithm and generate input files for TB model
-            COGITOmodel.generate_TBmodel(irreducible_grid=irreducible_grid, verbose=verbose, tag=tag, include_excited=include_excited, calc_nrms=calc_nrms,
+            COGITOmodel.generate_TBmodel(irreducible_grid=irreducible_grid, verbose=verbose, tag=tag, include_excited=include_excited,
+                                         vary_excited_by_atm=vary_excited_by_atm, min_unocc_orbs=min_unocc_orbs, calc_nrms=calc_nrms,
                             save_orb_converg_info = save_orb_converg_info,orbfactor = orbfactor, num_steps = num_steps, num_outer = num_outer,
                             plot_orbs = plot_orbs,band_opt = band_opt, orb_opt = orb_opt, min_proj = min_proj,
                             start_from_orbnpy = start_from_orbnpy,save_orb_figs = save_orb_figs,
@@ -10762,7 +10815,8 @@ def run_cogito(directory,save_metadata:bool=True, invariant=True, irreducible_gr
             if COGITOmodel.spin_polar:  # rerun with spin=1 for magnetic calculations
                 COGITOmodel = COGITO(directory, spin=1)
                 # do full algorithm and generate input files for TB model
-                COGITOmodel.generate_TBmodel(irreducible_grid=irreducible_grid, verbose=verbose, tag=tag, include_excited=include_excited, calc_nrms=calc_nrms,
+                COGITOmodel.generate_TBmodel(irreducible_grid=irreducible_grid, verbose=verbose, tag=tag, include_excited=include_excited,
+                                         vary_excited_by_atm=vary_excited_by_atm, min_unocc_orbs=min_unocc_orbs, calc_nrms=calc_nrms,
                             save_orb_converg_info = save_orb_converg_info,orbfactor = orbfactor, num_steps = num_steps, num_outer = num_outer,
                             plot_orbs = plot_orbs,band_opt = band_opt, orb_opt = orb_opt, min_proj = min_proj,
                             start_from_orbnpy = start_from_orbnpy,save_orb_figs = save_orb_figs,
@@ -10772,7 +10826,7 @@ def run_cogito(directory,save_metadata:bool=True, invariant=True, irreducible_gr
         COGITOmodel = COGITO(directory)
         # do full algorithm and generate input files for TB model
         COGITOmodel.generate_TBmodel(irreducible_grid=irreducible_grid, verbose=verbose, tag=tag,
-                                     include_excited=include_excited, calc_nrms=calc_nrms,
+                                     include_excited=include_excited, vary_excited_by_atm=vary_excited_by_atm, min_unocc_orbs=min_unocc_orbs, calc_nrms=calc_nrms,
                                      save_orb_converg_info=save_orb_converg_info, orbfactor=orbfactor, num_steps=num_steps,
                                      num_outer=num_outer,
                                      plot_orbs=plot_orbs, band_opt=band_opt, orb_opt=orb_opt, min_proj=min_proj,
@@ -10783,7 +10837,7 @@ def run_cogito(directory,save_metadata:bool=True, invariant=True, irreducible_gr
             COGITOmodel = COGITO(directory, spin=1)
             # do full algorithm and generate input files for TB model
             COGITOmodel.generate_TBmodel(irreducible_grid=irreducible_grid, verbose=verbose, tag=tag,
-                                         include_excited=include_excited, calc_nrms=calc_nrms,
+                                         include_excited=include_excited, vary_excited_by_atm=vary_excited_by_atm, min_unocc_orbs=min_unocc_orbs,  calc_nrms=calc_nrms,
                                          save_orb_converg_info=save_orb_converg_info, orbfactor=orbfactor, num_steps=num_steps,
                                          num_outer=num_outer,
                                          plot_orbs=plot_orbs, band_opt=band_opt, orb_opt=orb_opt, min_proj=min_proj,
@@ -10805,6 +10859,8 @@ def main(argv=None):
     cogito_args.add_argument("--verb",type=int,help="Verbosity with which to print updates and data.",default=0)
     cogito_args.add_argument("--tag",type=str,help="Tag to be appended to the runs output files.",default="")
     cogito_args.add_argument("--include_ex",type=int,help="Integer that cues how many excited orbitals to include in the COGITO basis. Options are 0, 1, or 2.",default=1)
+    cogito_args.add_argument("--vary_ex_by_atm",help="Change include_excited based on the orbital occupation of the atom. Reduces include_ex by 1 if the atom has >min_unocc_orbs unoccupied orbital states in the valence shell.",action='store_true')
+    cogito_args.add_argument("--min_unocc_orbs",type=int,help="The number of unoccupied orbitals an atom needs to have before reducing include_ex for said atom.",default=4)
     cogito_args.add_argument("--calc_nrms",help="If called, does extra analysis to compare reconstructed COGITO wfs to DFT wfs. Prints nrmse to error_output.txt",action='store_true') #
     cogito_args.add_argument("--no_save_converg",help="If called, does not save statistics on the orbital convergence to orb_converg_info.json.",action='store_true') # not #
     cogito_args.add_argument("--orbfactor",type=float,help="The amount to scale the initial orbital basis by.",default=1.0)
@@ -10826,7 +10882,8 @@ def main(argv=None):
     args = cogito_args.parse_args(argv) # if args_manual==None then should take from command line
     print("!!IMPORTANT!! To set any of the boolean variables to False do --irred_grid '', where the bool('') reads as False in python. Any other string will be True.")
 
-    run_cogito(directory=args.dir, save_metadata = not args.no_save_metadata,invariant=not args.not_invariant, irreducible_grid=not args.full_kgrid, verbose=args.verb, tag=args.tag, include_excited=args.include_ex, calc_nrms=args.calc_nrms,
+    run_cogito(directory=args.dir, save_metadata = not args.no_save_metadata,invariant=not args.not_invariant, irreducible_grid=not args.full_kgrid, verbose=args.verb, tag=args.tag,
+                        include_excited=args.include_ex, vary_excited_by_atm=args.vary_ex_by_atm, min_unocc_orbs=args.min_unocc_orbs,  calc_nrms=args.calc_nrms,
                         save_orb_converg_info =not args.no_save_converg,orbfactor = args.orbfactor, num_steps = args.num_steps, num_outer = args.num_outer,
                         plot_orbs = args.plot_orbs,band_opt =not args.no_band_opt, orb_opt =not args.no_orb_opt, min_proj = args.min_proj,
                         start_from_orbnpy = args.start_orbnpy,save_orb_figs = args.save_orb_figs,
