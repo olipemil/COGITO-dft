@@ -18,6 +18,7 @@ import time
 from functools import partial
 import plotly.graph_objects as go
 import itertools
+import psutil
 
 dist_version = "0.3.13"
 
@@ -341,7 +342,7 @@ class COGITO(object):
     def generate_TBmodel(self, invariant: bool = True, irreducible_grid=True, verbose=0, tag="", include_excited=1, vary_excited_by_atm: bool=False, min_unocc_orbs:int=4, calc_nrms=False, save_orb_converg_info:bool=True,
                          orbfactor=1.0, num_steps=50, num_outer=4, plot_orbs = False,
                          min_proj=0.01, band_opt=True,orb_opt=True,orb_orth=False,start_from_orbnpy = False,plot_projBS = False,plot_projDOS=False,orbs = None,
-                         save_orb_data=False,save_orb_figs=False,minimum_orb_energy: float=-60,min_duplicate_energy:float=-60, file_type: str="npy",wannier_fit=True,add_weight:float=1.0,prec:float=0.2):
+                         save_orb_data=False,save_orb_figs=False,minimum_orb_energy: float=-60,min_duplicate_energy:float=-60, file_type: str="npy",wannier_fit=True,add_weight:float=1.0,prec:float=0.2,run_nrmse_test:bool=False):
         """
         Runs all the functions neccessary to generate the TB interpolation.
         REQUIRES UNIFORM KPT GRID WITH NO SYMMETRY OR FULL SYMMETRY FOR TB MODEL.
@@ -651,6 +652,12 @@ class COGITO(object):
         # project orbitals on DFT wavefunctions
         self.proj_all_kpoints(calc_nrms=calc_nrms)
 
+        #run_nrmse_test = True
+        if run_nrmse_test:
+            og_nrms, og_nme = self.calculate_nrmse()
+            og_mnkcoeffs = copy.deepcopy(self.mnkcoefficients)
+            
+
         time4 = time.time()
         # Calculate elapsed time
         elapsed_time4 += time4 - time3
@@ -664,6 +671,82 @@ class COGITO(object):
                 print("         This is because in expand_irred_kgrid() the orbital overlaps are set by the coefficients.")
             self.optimize_band_set(band_opt=band_opt, orb_opt=orb_opt, orb_orth=orb_orth) # doing before expand grid definitely needs orb_opt=True!!!
 
+        if run_nrmse_test:
+            mod_nrms, mod_nme = self.calculate_nrmse()
+            mod_mnkcoeffs = copy.deepcopy(self.mnkcoefficients)
+            full_dict = {}
+            full_dict['og_nrms'] = og_nrms
+            full_dict['og_nme'] = og_nme
+            full_dict['mod_nrms'] = mod_nrms
+            full_dict['mod_nme'] = mod_nme
+            #print("check dict:",full_dict)
+
+            # now get modified state overlap with the place-wave KS states (represented by og construction, which is only part not orthogonal)
+            num_bands = len(mod_mnkcoeffs[0])
+            mod_ks_overlap = np.zeros([self.num_kpts,num_bands,num_bands],dtype=np.complex128)
+            og_ks_overlap = np.zeros([self.num_kpts,num_bands,num_bands],dtype=np.complex128)
+            ae_overlap = self.Sij
+            for kpt in range(self.num_kpts):
+                mod_ks_overlap[kpt] = np.matmul(np.conj(mod_mnkcoeffs[kpt]), np.matmul(ae_overlap[kpt], og_mnkcoeffs[kpt].transpose()))
+                og_ks_overlap[kpt] = np.matmul(np.conj(og_mnkcoeffs[kpt]), np.matmul(ae_overlap[kpt], og_mnkcoeffs[kpt].transpose()))
+            
+            # now get overlap difference on the bands
+            mod_ks_overlap = np.abs(mod_ks_overlap)
+            og_ks_overlap = np.abs(og_ks_overlap)
+            diff_overlap = (1-mod_ks_overlap[:,np.arange(num_bands),np.arange(num_bands)]) - (1-og_ks_overlap[:,np.arange(num_bands),np.arange(num_bands)])
+            diff_offdiagoverlap = (np.sum(mod_ks_overlap,axis=2)-mod_ks_overlap[:,np.arange(num_bands),np.arange(num_bands)]) - (np.sum(og_ks_overlap,axis=2)-og_ks_overlap[:,np.arange(num_bands),np.arange(num_bands)])
+            diff_nrmse = np.array(mod_nrms['all']) - np.array(og_nrms['all'])
+            diff_nme = np.array(mod_nme['all']) - np.array(og_nme['all'])
+
+            # now calculuate cumulative values
+            occ_diffover = np.zeros(self.num_kpts)
+            unocc_diffover = np.zeros(self.num_kpts)
+            occ_diffoffdiag = np.zeros(self.num_kpts)
+            unocc_diffoffdiag = np.zeros(self.num_kpts)
+            occ_diffnrmse = np.zeros(self.num_kpts)
+            unocc_diffnrmse = np.zeros(self.num_kpts)
+            occ_diffnme = np.zeros(self.num_kpts)
+            unocc_diffnme = np.zeros(self.num_kpts)
+            for kpt in range(self.num_kpts):
+                is_valence = self.eigval[kpt][:,0]<=(self.efermi+self.energy_shift)
+                val_diffover = diff_overlap[kpt][is_valence]
+                occ_diffover[kpt] = np.sum(val_diffover) / len(val_diffover)
+                con_diffover = diff_overlap[kpt][~is_valence]
+                unocc_diffover[kpt] = np.sum(con_diffover) / len(con_diffover)
+
+                val_diffoffdiag = diff_offdiagoverlap[kpt][is_valence]
+                occ_diffoffdiag[kpt] = np.sum(val_diffoffdiag) / len(val_diffoffdiag)
+                con_diffoffdiag = diff_offdiagoverlap[kpt][~is_valence]
+                unocc_diffoffdiag[kpt] = np.sum(con_diffoffdiag) / len(con_diffoffdiag)
+
+                val_diffnrmse = diff_nrmse[kpt][is_valence]
+                occ_diffnrmse[kpt] = np.sum(val_diffnrmse) / len(val_diffnrmse)
+                con_diffnrmse = diff_nrmse[kpt][~is_valence]
+                unocc_diffnrmse[kpt] = np.sum(con_diffnrmse) / len(con_diffnrmse)
+
+                val_diffnme = diff_nme[kpt][is_valence]
+                occ_diffnme[kpt] = np.sum(val_diffnme) / len(val_diffnme)
+                con_diffnme = diff_nme[kpt][~is_valence]
+                unocc_diffnme[kpt] = np.sum(con_diffnme) / len(con_diffnme)
+            avgocc_diffover = np.sum(occ_diffover*self.kpt_weights)
+            avgunocc_diffover = np.sum(unocc_diffover*self.kpt_weights)
+            avgocc_diffoffdiag = np.sum(occ_diffoffdiag*self.kpt_weights)
+            avgunocc_diffoffdiag = np.sum(unocc_diffoffdiag*self.kpt_weights)
+            avgocc_diffnrmse = np.sum(occ_diffnrmse*self.kpt_weights)
+            avgunocc_diffnrmse = np.sum(unocc_diffnrmse*self.kpt_weights)
+            avgocc_diffnme = np.sum(occ_diffnme*self.kpt_weights)
+            avgunocc_diffnme = np.sum(unocc_diffnme*self.kpt_weights)
+            
+            full_dict["diff_over_occ_unocc"] = [float(avgocc_diffover),float(avgunocc_diffover)]
+            full_dict["diff_offdiag_occ_unocc"] = [float(avgocc_diffoffdiag),float(avgunocc_diffoffdiag)]
+            full_dict["diff_nrmse_occ_unocc"] = [float(avgocc_diffnrmse),float(avgunocc_diffnrmse)]
+            full_dict["diff_nme_occ_unocc"] = [float(avgocc_diffnme),float(avgunocc_diffnme)]
+            
+            import json
+            with open(self.directory+"compare_wavefunc_error"+self.tag+".json", "w") as file:
+                json.dump(full_dict, file, indent=4)
+
+            
         # expand the irreducible grid to a full reducible grid
         if irreducible_grid == True:
             self.expand_irred_kgrid(save_only_inred=False)
@@ -1440,7 +1523,7 @@ class COGITO(object):
             diff_atms = all_atoms - atm[None,:]
             dist_atms = np.linalg.norm(diff_atms, axis=1)
             closest_rad = np.sort(dist_atms)[1]
-            all_close_atms = diff_atms[np.arange(len(diff_atms))[(dist_atms != 0) & (dist_atms < closest_rad*1.2)]]
+            all_close_atms = diff_atms[np.arange(len(diff_atms))[(dist_atms != 0) & (dist_atms < closest_rad*2.0)]]
             #print("closest atm radius:", closest_rad)
             rad = np.linalg.norm(all_close_atms, axis=1)
             theta = np.arccos(all_close_atms[:,2] / rad)
@@ -1655,7 +1738,7 @@ class COGITO(object):
             environ_tensors[atomnum] = {}
             for key in allsph_key: # key will be between 0 and 8 (for d) or even 15 (for f)
                 if key == 0: # case of s orbitals. just copy over
-                    Mab = np.sum(atom_env[2,:])
+                    Mab = np.sum(np.exp(-(atom_env[2,:]/2)**1.5))
                     environ_tensors[atomnum][0] = Mab
                     new_orb_vector.append([1])
                 if key == 1: # case of p orbitals (next two will be other ones)
@@ -1663,7 +1746,7 @@ class COGITO(object):
                     Mab = np.zeros((3,3))
                     for p1 in range(3):
                         for p2 in range(3):
-                            Mab[p1,p2] = np.sum(atom_env[2,:]*complex128funs(atom_env[0,:], atom_env[1,:],init[p1]) *
+                            Mab[p1,p2] = np.sum(np.exp(-(atom_env[2,:]/2)**1.5)*complex128funs(atom_env[0,:], atom_env[1,:],init[p1]) *
                                                 complex128funs(atom_env[0,:], atom_env[1,:],init[p2]))
                     #print(Mab)
                     if np.sum(np.abs(Mab - np.diag(np.diag(Mab)))) < 0.0000001:
@@ -1687,7 +1770,7 @@ class COGITO(object):
                     Mab = np.zeros((5, 5))
                     for d1 in range(5):
                         for d2 in range(5):
-                            Mab[d1, d2] = np.sum(atom_env[2,:]*complex128funs(atom_env[0, :], atom_env[1, :], init[d1]) *
+                            Mab[d1, d2] = np.sum(np.exp(-(atom_env[2,:]/2)**1.5)*complex128funs(atom_env[0, :], atom_env[1, :], init[d1]) *
                                                  complex128funs(atom_env[0, :], atom_env[1, :], init[d2]))
                     #print(Mab)
                     environ_tensors[atomnum][2] = Mab
@@ -1722,7 +1805,7 @@ class COGITO(object):
                     Mab = np.zeros((7, 7))
                     for f1 in range(7):
                         for f2 in range(7):
-                            Mab[f1, f2] = np.sum(atom_env[2,:]*complex128funs(atom_env[0, :], atom_env[1, :], init[f1]) *
+                            Mab[f1, f2] = np.sum(np.exp(-(atom_env[2,:]/2)**1.5)*complex128funs(atom_env[0, :], atom_env[1, :], init[f1]) *
                                                  complex128funs(atom_env[0, :], atom_env[1, :], init[f2]))
                     #print(Mab)
                     environ_tensors[atomnum][3] = Mab
@@ -4957,7 +5040,6 @@ class COGITO(object):
                 line = ' '.join(f"{x:8.4f}" for x in rounded_array[i:i+6])
                 error_file.write(line + '\n')
 
-
     def _project_one_kpoint(self, kpt, calc_nrms=False):
         """
         Compute all projection quantities for one k-point.
@@ -5057,6 +5139,72 @@ class COGITO(object):
             'nrms':nrms,
             'nme':nme,
         }
+    
+    def calculate_nrmse(self):
+        total_nrms = []
+        total_nme = []
+        all_nrms = []
+        num_kpts = self.num_kpts
+
+        for kpt in range(num_kpts):
+
+            DFT_wavefunc = np.array(self.recip_WFcoeffs[kpt])  # [band,gpoint]
+            adjusted_orbs = self.get_kdep_reciporbs(kpt)
+            #ae_overlap = self.Sij[kpt]
+            coeff = self.mnkcoefficients[kpt] #self.get_aecoefficients(adjusted_orbs, DFT_wavefunc, ae_overlap, kpt, recip=True)
+
+            orth_extra_wf = np.zeros(DFT_wavefunc.shape, dtype=np.complex128)
+            trueWFs = np.zeros(DFT_wavefunc.shape, dtype=np.complex128)
+            orth_orb_wfs = np.zeros(DFT_wavefunc.shape, dtype=np.complex128)
+            nrms = []
+            nme = []
+            for band in range(self.max_band):
+                trueWF = DFT_wavefunc[band]
+                orb_coeff = np.zeros(trueWF.shape, dtype=np.complex128)
+                for temporb in range(self.num_orbs):
+                    orbWF = adjusted_orbs[temporb]  # orth_orbs
+                    orb_coeff += orbWF * coeff[band][temporb]
+                orth_orb_wfs[band] = orb_coeff
+                orth_extra_wf[band] = trueWF - orb_coeff
+                trueWFs[band] = trueWF
+                normalize_rms = np.sqrt(np.average(np.square(np.abs(DFT_wavefunc[band]))))
+                normalize_me = np.average(np.abs(DFT_wavefunc[band]))
+                #rms.append(
+                #    np.sqrt(np.average(np.square(orth_extra_wf[band].real) + np.square(orth_extra_wf[band].imag))))
+                nrms.append(np.sqrt(np.average(
+                    np.square(orth_extra_wf[band].real) + np.square(orth_extra_wf[band].imag))) / normalize_rms)
+                nme.append(np.average(np.abs(orth_extra_wf[band])) / normalize_me)
+
+            total_nrms.append(nrms)
+            total_nme.append(nme)
+            all_nrms.append(np.average(nrms[:self.num_orbs]))
+    
+        total_nrms = np.array(total_nrms)
+        total_nme = np.array(total_nme)
+        all_nrms = np.array(all_nrms)
+
+        occ_nrms = np.zeros(num_kpts)
+        max_occnrms = np.zeros(num_kpts)
+        occ_nme = np.zeros(num_kpts)
+        max_occnme = np.zeros(num_kpts)
+        for kpt in range(num_kpts):
+            is_valence = self.eigval[kpt][:,0]<=(self.efermi+self.energy_shift)
+            val_nrms = total_nrms[kpt][is_valence]
+            occ_nrms[kpt] = np.sum(np.abs(val_nrms)) / len(val_nrms)
+            max_occnrms[kpt] = np.amax(val_nrms)
+            val_nme = total_nme[kpt][is_valence]
+            occ_nme[kpt] = np.sum(np.abs(val_nme)) / len(val_nme)
+            max_occnme[kpt] = np.amax(val_nme)
+        avg_occnrms = np.sum(occ_nrms*self.kpt_weights)
+        avg_maxnrms = np.sum(max_occnrms*self.kpt_weights)
+        maxmaxnrms = np.max(max_occnrms)
+        avg_occnme = np.sum(occ_nme*self.kpt_weights)
+        avg_maxnme = np.sum(max_occnme*self.kpt_weights)
+        maxmaxnme = np.max(max_occnme)
+        
+        return ({'all':total_nrms.tolist(),'avg':avg_occnrms.tolist(),'avg_max':avg_maxnrms.tolist(),'max_max':maxmaxnrms.tolist()}, 
+                {'all':total_nme.tolist(), 'avg':avg_occnme.tolist(),'avg_max':avg_maxnme.tolist(),'max_max':maxmaxnme.tolist()})
+
 
     def optimize_band_set(self,band_opt=True,orb_opt=True,orb_orth=False, en_cut_low:float=2.0, en_cut_high:float=5.0, max_spill:float=1.0):
         """
@@ -5419,11 +5567,11 @@ class COGITO(object):
                     new_coeff[is_valence] = nonorth_coeff[is_valence] # lowdin_orth_vectors_orblap(nonorth_coeff[is_valence],orb_overlap)
                     ratio = np.ones(len(new_coeff[is_valence]))
                     ref_energies = self.eigval[kpt][include_lowband][:,0][is_valence][val_between]-(self.efermi+self.energy_shift + low) # between 0 and 2
-                    ratio[val_between] = np.tanh((-ref_energies.real+1))/2+1/2 # ratio ~1 for ref_energies at 0 and ~0 for ref at 2.
+                    ratio[val_between] = 1-np.tanh(ref_energies.real)**2 # ratio ~1 for ref_energies at 0 and ~0 for ref at 2.
                     # set ratio=0 (don't lowdin orthogonalize band or GS higher bands to this band at all) if spill is too high
                     val_spill = self.all_band_spillage[kpt][include_lowband][is_valence][val_between]
                     rescale = val_spill > max_spill
-                    ratio[val_between][rescale] = ratio[val_between][rescale] * np.tanh((-(val_spill[rescale]-max_spill-0.1)/0.2+1))/2+1/2
+                    ratio[val_between][rescale] = ratio[val_between][rescale] * (1-np.tanh((val_spill[rescale]-max_spill)/0.1)**2)
                     # only keep part of the nonorth_coeff for in between region
                     new_coeff[is_valence][val_between] = new_coeff[is_valence][val_between]*ratio[val_between][:,None] + low_coeff[low_conduction][cond_between]*(1-ratio[val_between][:,None])
                     new_coeff[is_conduction] = GS_orth_twoLoworthSets_orblap(new_coeff[is_valence],new_coeff[is_conduction],orb_overlap,ratio=ratio)
@@ -7041,11 +7189,11 @@ class COGITO(object):
 
         if n_jobs == 1:
             results = [
-                self._make_one_kpt_wan(kpt,prim_wangrid)
+                self._make_one_kpt_wan(kpt,prim_wangrid,n_jobs)
                 for kpt in range(self.num_kpts)]
         else:
             results = Parallel(n_jobs=n_jobs, backend=backend)(
-                delayed(self._make_one_kpt_wan)(kpt, prim_wangrid)
+                delayed(self._make_one_kpt_wan)(kpt, prim_wangrid,n_jobs)
                 for kpt in range(self.num_kpts))
 
         for result in results:
@@ -7080,7 +7228,7 @@ class COGITO(object):
 
         return wan_orbs, prim_wangrid
 
-    def _make_one_kpt_wan(self, kpt, prim_wangrid):
+    def _make_one_kpt_wan(self, kpt, prim_wangrid, n_jobs):
         """
         Construct wan_kpt_orbs[kpt] for one k-point.
 
@@ -7113,15 +7261,63 @@ class COGITO(object):
         )  # [gpoint, orb]
 
         cur_sum = band_coeff.T @ DFT_wavefunc  # [orb, gpoint]
+        
+        # Assumes float64 coordinates and complex128 orbital arrays.
+        num_orbs, gpoint = cur_sum.shape
+        real_point = prim_wangrid.shape[1]
 
-        pln_wv = np.exp(
-            2j * np.pi * (gplusk_coords @ prim_wangrid)
-        )  # [gpoint, real_point]
+        # Leave headroom for BLAS workspace and other uncounted allocations.
+        worker_budget_bytes = int(psutil.virtual_memory().available / n_jobs)
+        budget = int(0.7 * worker_budget_bytes)  # Apply safety margin once
 
-        A = np.ascontiguousarray(cur_sum * exp_term.T)
-        B = np.ascontiguousarray(pln_wv)
+        # New arrays that do NOT shrink with batch size: A and wan_orbs.
+        fixed_bytes = 16 * num_orbs * (gpoint + real_point)
 
-        wan_orbs = A @ B  # [orb, real_point]
+        # Conservative per-point allowance:
+        # phase:   float64[gpoint]
+        # pln_wv:  complex128[gpoint]
+        # A @ B:   complex128[num_orbs]
+        bytes_per_point = 24 * gpoint + 16 * num_orbs
+
+        batch_size = min(
+            real_point,
+            (budget - fixed_bytes) // bytes_per_point,
+        )
+        num_batches = (real_point + batch_size - 1) // batch_size
+
+        if batch_size < 1:
+            raise MemoryError(
+                "Memory budget cannot hold A, wan_orbs, and one batch point."
+            )
+        if self.verbose > 0:
+            print(
+                f"Workspace budget: {budget / 1024**3:.2f} GiB; "
+                f"Number of batches: {num_batches}; "
+                f"batch size: {batch_size}"
+            )
+
+        # Compute A once, directly into a contiguous output array.
+        A = np.empty((num_orbs, gpoint), dtype=np.complex128)
+        np.multiply(cur_sum, exp_term.T, out=A)
+
+        # Every element is assigned below, so zero initialization is unnecessary.
+        wan_orbs = np.empty((num_orbs, real_point), dtype=np.complex128)
+
+        for start in range(0, real_point, batch_size):
+            end = min(start + batch_size, real_point)
+
+            phase = gplusk_coords @ prim_wangrid[:, start:end]
+
+            # Build the complex exponential without a separate exponential output.
+            pln_wv = np.empty(phase.shape, dtype=np.complex128)
+            np.multiply(phase, 2j * np.pi, out=pln_wv)
+            np.exp(pln_wv, out=pln_wv)
+            del phase
+
+            wan_orbs[:, start:end] = A @ pln_wv
+
+            # Remove this reference before allocating the next batch.
+            del pln_wv
 
         return {"kpt": kpt,"wan_orbs": wan_orbs}
 
@@ -10745,7 +10941,7 @@ class Tee: # just to print to terminal and save output to file
 def run_cogito(directory,save_metadata:bool=True, invariant=True, irreducible_grid=True, verbose=0, tag="", include_excited=1, vary_excited_by_atm: bool=False, min_unocc_orbs:int=5,
                         calc_nrms=False, save_orb_converg_info:bool=True, orbfactor=1.0, num_steps=50, num_outer=4, plot_orbs = False,
                         min_proj=0.01, band_opt=True,orb_opt=True,orb_orth=False,start_from_orbnpy = False,plot_projBS = False,plot_projDOS=False,orbs = None,save_orb_data=False,
-                        save_orb_figs=False,minimum_orb_energy: float=-60,min_duplicate_energy:float=-60, wannier_fit=True,add_weight:float=1.0,prec:float=0.2):
+                        save_orb_figs=False,minimum_orb_energy: float=-60,min_duplicate_energy:float=-60, wannier_fit=True,add_weight:float=1.0,prec:float=0.2,run_nrmse_test:bool=False):
     '''
     Runs COGITO. See generate_TBmodel() for a description of all the other arguments.
 
@@ -10810,7 +11006,7 @@ def run_cogito(directory,save_metadata:bool=True, invariant=True, irreducible_gr
                             save_orb_converg_info = save_orb_converg_info,orbfactor = orbfactor, num_steps = num_steps, num_outer = num_outer,
                             plot_orbs = plot_orbs,band_opt = band_opt, orb_opt = orb_opt, min_proj = min_proj,
                             start_from_orbnpy = start_from_orbnpy,save_orb_figs = save_orb_figs,
-                            minimum_orb_energy = minimum_orb_energy, min_duplicate_energy = min_duplicate_energy,wannier_fit=wannier_fit,add_weight=add_weight,prec=prec)
+                            minimum_orb_energy = minimum_orb_energy, min_duplicate_energy = min_duplicate_energy,wannier_fit=wannier_fit,add_weight=add_weight,prec=prec,run_nrmse_test=run_nrmse_test)
 
             if COGITOmodel.spin_polar:  # rerun with spin=1 for magnetic calculations
                 COGITOmodel = COGITO(directory, spin=1)
@@ -10820,7 +11016,7 @@ def run_cogito(directory,save_metadata:bool=True, invariant=True, irreducible_gr
                             save_orb_converg_info = save_orb_converg_info,orbfactor = orbfactor, num_steps = num_steps, num_outer = num_outer,
                             plot_orbs = plot_orbs,band_opt = band_opt, orb_opt = orb_opt, min_proj = min_proj,
                             start_from_orbnpy = start_from_orbnpy,save_orb_figs = save_orb_figs,
-                            minimum_orb_energy = minimum_orb_energy, min_duplicate_energy = min_duplicate_energy,wannier_fit=wannier_fit,add_weight=add_weight,prec=prec)
+                            minimum_orb_energy = minimum_orb_energy, min_duplicate_energy = min_duplicate_energy,wannier_fit=wannier_fit,add_weight=add_weight,prec=prec,run_nrmse_test=run_nrmse_test)
 
     else: # just run without saving any meta data
         COGITOmodel = COGITO(directory)
@@ -10831,7 +11027,7 @@ def run_cogito(directory,save_metadata:bool=True, invariant=True, irreducible_gr
                                      num_outer=num_outer,
                                      plot_orbs=plot_orbs, band_opt=band_opt, orb_opt=orb_opt, min_proj=min_proj,
                                      start_from_orbnpy=start_from_orbnpy, save_orb_figs=save_orb_figs,
-                                     minimum_orb_energy=minimum_orb_energy, min_duplicate_energy=min_duplicate_energy,wannier_fit=wannier_fit,add_weight=add_weight,prec=prec)
+                                     minimum_orb_energy=minimum_orb_energy, min_duplicate_energy=min_duplicate_energy,wannier_fit=wannier_fit,add_weight=add_weight,prec=prec,run_nrmse_test=run_nrmse_test)
 
         if COGITOmodel.spin_polar:  # rerun with spin=1 for magnetic calculations
             COGITOmodel = COGITO(directory, spin=1)
@@ -10842,7 +11038,7 @@ def run_cogito(directory,save_metadata:bool=True, invariant=True, irreducible_gr
                                          num_outer=num_outer,
                                          plot_orbs=plot_orbs, band_opt=band_opt, orb_opt=orb_opt, min_proj=min_proj,
                                          start_from_orbnpy=start_from_orbnpy, save_orb_figs=save_orb_figs,
-                                         minimum_orb_energy=minimum_orb_energy, min_duplicate_energy=min_duplicate_energy,wannier_fit=wannier_fit,add_weight=add_weight,prec=prec)
+                                         minimum_orb_energy=minimum_orb_energy, min_duplicate_energy=min_duplicate_energy,wannier_fit=wannier_fit,add_weight=add_weight,prec=prec,run_nrmse_test=run_nrmse_test)
 
 
 def main(argv=None):
@@ -10877,6 +11073,7 @@ def main(argv=None):
     cogito_args.add_argument("--old_bloch_fit",help="If called, performs the iterations and fit using the approximate local orbitals from the Bloch orbital at k=0, otherwise just directly uses the Wannier orbitals.",action='store_true') #not #
     cogito_args.add_argument("--increase_weight",type=float,help="Is multiplied by the weights for localizing the atomic orbitals fit to the Wannier orbitals. Setting >1 will generally make more localized, while <1 will make more diffuse up to the natural delocalization of the initial Wannier orbitals. However, all weights are faded out over outer_steps.",default=1.0)
     cogito_args.add_argument("--prec",type=float,help="The precision of the Wannier grid.",default=0.25)
+    cogito_args.add_argument("--run_nrmse_test",help="If called, calculates NRMSE and NME of original and modified reconstructed KS states.",action='store_true')
 
 
     args = cogito_args.parse_args(argv) # if args_manual==None then should take from command line
@@ -10887,7 +11084,7 @@ def main(argv=None):
                         save_orb_converg_info =not args.no_save_converg,orbfactor = args.orbfactor, num_steps = args.num_steps, num_outer = args.num_outer,
                         plot_orbs = args.plot_orbs,band_opt =not args.no_band_opt, orb_opt =not args.no_orb_opt, min_proj = args.min_proj,
                         start_from_orbnpy = args.start_orbnpy,save_orb_figs = args.save_orb_figs,
-                        minimum_orb_energy = args.minimum_orb_en, min_duplicate_energy = args.min_duplicate_en, wannier_fit = not args.old_bloch_fit,add_weight=args.increase_weight,prec=args.prec)
+                        minimum_orb_energy = args.minimum_orb_en, min_duplicate_energy = args.min_duplicate_en, wannier_fit = not args.old_bloch_fit,add_weight=args.increase_weight,prec=args.prec,run_nrmse_test=args.run_nrmse_test)
 
 if __name__ == "__main__":
     raise SystemExit(main())

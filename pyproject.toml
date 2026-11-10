@@ -15,6 +15,7 @@ dependencies = [
     "plotly",
     "pymatgen",
     "seekpath==2.1.0"
+    "psutil"
 ]
 
 [project.optional-dependencies]
