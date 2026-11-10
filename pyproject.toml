@@ -14,7 +14,7 @@ dependencies = [
     "matplotlib",
     "plotly",
     "pymatgen",
-    "seekpath==2.1.0"
+    "seekpath==2.1.0",
     "psutil"
 ]
 
