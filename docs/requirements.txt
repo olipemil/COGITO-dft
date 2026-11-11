@@ -9,6 +9,7 @@ scipy>=1.15.0
 matplotlib
 plotly
 pymatgen
+psutil
 
 scikit-image
 dash
