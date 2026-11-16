@@ -20,7 +20,7 @@ import plotly.graph_objects as go
 import itertools
 import psutil
 
-dist_version = "0.3.14"
+dist_version = "0.3.15"
 
 # try parallelizing stuff
 import os
@@ -8185,9 +8185,12 @@ class COGITO(object):
             if l==0 and max_rad !=0:
                 print("need to adjust limits for s orbital!")
                 low_bounds[5] = 0.1
-                high_bounds[2] = 0.001/just_one[0] * 10
+                high_bounds[2] = np.abs(0.001/just_one[0]) * 10
                 print("ratio:",0.001/just_one[0])
-                pinit[2] = 0.001/just_one[0]
+                pinit[2] = np.abs(0.001/just_one[0])
+                if high_bounds[2] <= low_bounds[2]:
+                    high_bounds[2] = low_bounds[2] + 0.1
+
 
             if l==1: # reduce weight for p orbitals points that are looking more like d orbitals near r=0
                 bad_low = (x < max_rad*0.9) & (y < (0.001-0.0001)/max_rad*x)
